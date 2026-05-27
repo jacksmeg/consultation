@@ -178,6 +178,40 @@ def _safe_float(value, default=0.0):
         return default
 
 
+def _generate_tx_ref() -> str:
+    return f"PAY-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"
+
+
+def _upsert_setting(setting_key: str, setting_value: str):
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO consult_portal_settings(setting_key, setting_value, updated_at)
+           VALUES(?,?,?)
+           ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=excluded.updated_at""",
+        ((setting_key or "").strip(), (setting_value or "").strip(), _now_text()),
+    )
+    conn.commit()
+
+
+def _audit_log(action: str, target: str = "", details: str = "", actor_role: str = "", actor_id: int | None = None):
+    role = actor_role or "system"
+    aid = actor_id
+    if not actor_role:
+        if session.get("consult_patient_id"):
+            role = "patient"
+            aid = _safe_int(session.get("consult_patient_id"), 0)
+        elif session.get("consult_doctor_id"):
+            role = "doctor"
+            aid = _safe_int(session.get("consult_doctor_id"), 0)
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO consult_audit_logs(actor_role, actor_id, action, target, details, created_at)
+           VALUES(?,?,?,?,?,?)""",
+        (role, aid if aid else None, action, (target or "").strip(), (details or "").strip(), _now_text()),
+    )
+    conn.commit()
+
+
 def _valid_email(value: str) -> bool:
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", (value or "").strip()))
 
@@ -304,10 +338,79 @@ def init_db():
             FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id)
         )"""
     )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_lab_results(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            doctor_id INTEGER,
+            report_type TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            result_link TEXT,
+            status TEXT NOT NULL DEFAULT 'Pending Review',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(patient_id) REFERENCES consult_patients(id),
+            FOREIGN KEY(doctor_id) REFERENCES consult_doctors(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_payments(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER,
+            patient_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'GHS',
+            method TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Paid',
+            tx_ref TEXT UNIQUE NOT NULL,
+            notes TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id),
+            FOREIGN KEY(patient_id) REFERENCES consult_patients(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_portal_settings(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            setting_key TEXT NOT NULL UNIQUE,
+            setting_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_audit_logs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_role TEXT NOT NULL,
+            actor_id INTEGER,
+            action TEXT NOT NULL,
+            target TEXT,
+            details TEXT,
+            created_at TEXT NOT NULL
+        )"""
+    )
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_appt_patient ON consult_appointments(patient_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_appt_doctor ON consult_appointments(doctor_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_appt_status ON consult_appointments(status)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_msg_appt ON consult_appointment_messages(appointment_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_lab_patient ON consult_lab_results(patient_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_lab_doctor ON consult_lab_results(doctor_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_pay_patient ON consult_payments(patient_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_pay_appt ON consult_payments(appointment_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_log_created ON consult_audit_logs(created_at)")
+
+    defaults = [
+        ("portal_name", "JHIMS Consultation"),
+        ("support_phone", "050 805 0007"),
+        ("support_email", "jacksmeg99@gmail.com"),
+        ("consultation_window_minutes", "30"),
+    ]
+    for key, value in defaults:
+        c.execute(
+            """INSERT INTO consult_portal_settings(setting_key, setting_value, updated_at)
+               VALUES(?,?,?)
+               ON CONFLICT(setting_key) DO NOTHING""",
+            (key, value, _now_text()),
+        )
     conn.commit()
 
 
@@ -491,13 +594,371 @@ def consultation_healthz():
     return {"ok": True, "service": "jhims-consultation-portal", "date": _now_text(), "public_url": PUBLIC_URL}
 
 
-@app.route("/consultation/modules/<slug>")
+def _module_dataset(slug: str, patient, doctor):
+    conn = get_db()
+    slug = (slug or "").strip().lower()
+    data = {"slug": slug}
+
+    if slug == "medical-records":
+        where = ["a.status='Completed'"]
+        params = []
+        if patient:
+            where.append("a.patient_id=?")
+            params.append(patient["id"])
+        records = conn.execute(
+            f"""SELECT a.appointment_code, a.scheduled_for, a.diagnosis, a.prescription, a.doctor_notes,
+                       p.full_name AS patient_name, d.full_name AS doctor_name, d.specialty
+                FROM consult_appointments a
+                JOIN consult_patients p ON p.id=a.patient_id
+                JOIN consult_doctors d ON d.id=a.doctor_id
+                WHERE {' AND '.join(where)}
+                ORDER BY a.scheduled_for DESC, a.id DESC
+                LIMIT 120""",
+            params,
+        ).fetchall()
+        data["records"] = records
+        data["kpis"] = {
+            "completed_records": len(records),
+            "with_diagnosis": len([r for r in records if (r["diagnosis"] or "").strip()]),
+            "with_prescription": len([r for r in records if (r["prescription"] or "").strip()]),
+        }
+
+    elif slug == "e-prescriptions":
+        where = ["a.status='Completed'", "TRIM(COALESCE(a.prescription,''))<>''"]
+        params = []
+        if patient:
+            where.append("a.patient_id=?")
+            params.append(patient["id"])
+        rows = conn.execute(
+            f"""SELECT a.appointment_code, a.scheduled_for, a.prescription, a.diagnosis, a.follow_up_date,
+                       p.full_name AS patient_name, d.full_name AS doctor_name
+                FROM consult_appointments a
+                JOIN consult_patients p ON p.id=a.patient_id
+                JOIN consult_doctors d ON d.id=a.doctor_id
+                WHERE {' AND '.join(where)}
+                ORDER BY a.scheduled_for DESC, a.id DESC
+                LIMIT 120""",
+            params,
+        ).fetchall()
+        data["prescriptions"] = rows
+        data["kpis"] = {
+            "total_prescriptions": len(rows),
+            "with_follow_up": len([r for r in rows if (r["follow_up_date"] or "").strip()]),
+        }
+
+    elif slug == "lab-results":
+        where = ["1=1"]
+        params = []
+        if patient:
+            where.append("lr.patient_id=?")
+            params.append(patient["id"])
+        elif doctor:
+            where.append("(lr.doctor_id=? OR lr.patient_id IN (SELECT patient_id FROM consult_appointments WHERE doctor_id=?))")
+            params.extend([doctor["id"], doctor["id"]])
+        rows = conn.execute(
+            f"""SELECT lr.*, p.full_name AS patient_name, d.full_name AS doctor_name
+                FROM consult_lab_results lr
+                JOIN consult_patients p ON p.id=lr.patient_id
+                LEFT JOIN consult_doctors d ON d.id=lr.doctor_id
+                WHERE {' AND '.join(where)}
+                ORDER BY lr.created_at DESC, lr.id DESC
+                LIMIT 120""",
+            params,
+        ).fetchall()
+        if doctor:
+            patient_options = conn.execute(
+                """SELECT DISTINCT p.id, p.full_name
+                   FROM consult_appointments a
+                   JOIN consult_patients p ON p.id=a.patient_id
+                   WHERE a.doctor_id=?
+                   ORDER BY p.full_name ASC""",
+                (doctor["id"],),
+            ).fetchall()
+        elif patient:
+            patient_options = [patient]
+        else:
+            patient_options = conn.execute("SELECT id, full_name FROM consult_patients ORDER BY full_name ASC LIMIT 200").fetchall()
+
+        doctor_options = conn.execute(
+            "SELECT id, full_name, specialty FROM consult_doctors WHERE status='active' ORDER BY full_name ASC LIMIT 200"
+        ).fetchall()
+        data["lab_rows"] = rows
+        data["patient_options"] = patient_options
+        data["doctor_options"] = doctor_options
+        data["can_add"] = bool(patient or doctor)
+
+    elif slug in ("payments", "billing"):
+        pay_where = ["1=1"]
+        pay_params = []
+        if patient:
+            pay_where.append("pay.patient_id=?")
+            pay_params.append(patient["id"])
+        rows = conn.execute(
+            f"""SELECT pay.*, p.full_name AS patient_name, a.appointment_code, a.reason, a.scheduled_for, d.full_name AS doctor_name
+                FROM consult_payments pay
+                JOIN consult_patients p ON p.id=pay.patient_id
+                LEFT JOIN consult_appointments a ON a.id=pay.appointment_id
+                LEFT JOIN consult_doctors d ON d.id=a.doctor_id
+                WHERE {' AND '.join(pay_where)}
+                ORDER BY pay.created_at DESC, pay.id DESC
+                LIMIT 200""",
+            pay_params,
+        ).fetchall()
+        total_paid = sum([_safe_float(r["amount"], 0.0) for r in rows if (r["status"] or "").lower() == "paid"])
+        by_method = {}
+        for r in rows:
+            method = (r["method"] or "Other").strip() or "Other"
+            by_method[method] = by_method.get(method, 0) + _safe_float(r["amount"], 0.0)
+
+        if patient:
+            due_appointments = conn.execute(
+                """SELECT a.id, a.appointment_code, a.reason, a.scheduled_for, d.full_name AS doctor_name, d.consultation_fee
+                   FROM consult_appointments a
+                   JOIN consult_doctors d ON d.id=a.doctor_id
+                   WHERE a.patient_id=? AND a.status IN ('Requested','Confirmed','Reschedule Requested','Completed')
+                   ORDER BY a.scheduled_for DESC, a.id DESC
+                   LIMIT 120""",
+                (patient["id"],),
+            ).fetchall()
+        else:
+            due_appointments = []
+
+        data["payments"] = rows
+        data["total_paid"] = total_paid
+        data["method_totals"] = sorted(by_method.items(), key=lambda x: x[0].lower())
+        data["due_appointments"] = due_appointments
+        data["can_pay"] = bool(patient)
+
+    elif slug == "patients":
+        where = ["1=1"]
+        params = []
+        if doctor:
+            where.append("a.doctor_id=?")
+            params.append(doctor["id"])
+        rows = conn.execute(
+            f"""SELECT p.id, p.full_name, p.phone, p.email, p.created_at, p.last_login_at,
+                       COUNT(a.id) AS total_consults,
+                       SUM(CASE WHEN a.status='Completed' THEN 1 ELSE 0 END) AS completed_consults
+                FROM consult_patients p
+                LEFT JOIN consult_appointments a ON a.patient_id=p.id
+                WHERE {' AND '.join(where)}
+                GROUP BY p.id, p.full_name, p.phone, p.email, p.created_at, p.last_login_at
+                ORDER BY total_consults DESC, p.full_name ASC
+                LIMIT 300""",
+            params,
+        ).fetchall()
+        data["patients"] = rows
+
+    elif slug == "consultations":
+        status_filter = (request.args.get("status", "") or "").strip()
+        where = ["1=1"]
+        params = []
+        if doctor:
+            where.append("a.doctor_id=?")
+            params.append(doctor["id"])
+        if patient:
+            where.append("a.patient_id=?")
+            params.append(patient["id"])
+        if status_filter:
+            where.append("a.status=?")
+            params.append(status_filter)
+
+        rows = conn.execute(
+            f"""SELECT a.*, p.full_name AS patient_name, d.full_name AS doctor_name, d.specialty
+                FROM consult_appointments a
+                JOIN consult_patients p ON p.id=a.patient_id
+                JOIN consult_doctors d ON d.id=a.doctor_id
+                WHERE {' AND '.join(where)}
+                ORDER BY a.scheduled_for DESC, a.id DESC
+                LIMIT 300""",
+            params,
+        ).fetchall()
+        status_counts = conn.execute(
+            """SELECT status, COUNT(*) AS c
+               FROM consult_appointments
+               GROUP BY status
+               ORDER BY c DESC"""
+        ).fetchall()
+        data["consultations"] = rows
+        data["status_counts"] = status_counts
+        data["status_filter"] = status_filter
+
+    elif slug == "reports":
+        status_counts = conn.execute(
+            """SELECT status, COUNT(*) AS c
+               FROM consult_appointments
+               GROUP BY status
+               ORDER BY c DESC"""
+        ).fetchall()
+        specialty_counts = conn.execute(
+            """SELECT specialty, COUNT(*) AS c
+               FROM consult_doctors
+               WHERE status='active'
+               GROUP BY specialty
+               ORDER BY c DESC, specialty ASC"""
+        ).fetchall()
+        daily = conn.execute(
+            """SELECT substr(created_at,1,10) AS day, COUNT(*) AS c
+               FROM consult_appointments
+               GROUP BY day
+               ORDER BY day DESC
+               LIMIT 14"""
+        ).fetchall()
+        daily = list(reversed(daily))
+        data["status_counts"] = status_counts
+        data["specialty_counts"] = specialty_counts
+        data["daily_counts"] = daily
+
+    elif slug == "users-roles":
+        data["counts"] = {
+            "patients": conn.execute("SELECT COUNT(*) AS c FROM consult_patients").fetchone()["c"],
+            "doctors": conn.execute("SELECT COUNT(*) AS c FROM consult_doctors").fetchone()["c"],
+            "appointments": conn.execute("SELECT COUNT(*) AS c FROM consult_appointments").fetchone()["c"],
+        }
+        data["roles"] = [
+            {"role": "Patient", "permissions": "Book appointments, access records, send messages"},
+            {"role": "Doctor", "permissions": "Manage consultations, update notes, manage schedule"},
+            {"role": "Admin", "permissions": "Configure modules, monitor billing, audit system logs"},
+        ]
+
+    elif slug == "departments":
+        rows = conn.execute(
+            """SELECT specialty AS department, COUNT(*) AS doctors
+               FROM consult_doctors
+               WHERE status='active'
+               GROUP BY specialty
+               ORDER BY doctors DESC, department ASC"""
+        ).fetchall()
+        data["departments"] = rows
+
+    elif slug == "settings":
+        rows = conn.execute(
+            "SELECT setting_key, setting_value, updated_at FROM consult_portal_settings ORDER BY setting_key ASC"
+        ).fetchall()
+        data["settings"] = rows
+        data["can_edit"] = bool(doctor)
+
+    elif slug == "audit-logs":
+        where = ["1=1"]
+        params = []
+        if patient:
+            where.append("actor_role='patient' AND actor_id=?")
+            params.append(patient["id"])
+        rows = conn.execute(
+            f"""SELECT * FROM consult_audit_logs
+                WHERE {' AND '.join(where)}
+                ORDER BY created_at DESC, id DESC
+                LIMIT 200""",
+            params,
+        ).fetchall()
+        data["logs"] = rows
+
+    return data
+
+
+@app.route("/consultation/modules/<slug>", methods=["GET", "POST"])
 def consult_module_page(slug):
     module = MODULE_PAGES.get((slug or "").strip().lower())
     if not module:
         flash("Requested module was not found.", "warning")
         return redirect(url_for("consultation_home"))
-    return _render("consultation_module.html", module=module, module_slug=slug)
+    module_slug = (slug or "").strip().lower()
+    patient = current_patient()
+    doctor = current_doctor()
+
+    if request.method == "POST":
+        action = (request.form.get("action", "") or "").strip().lower()
+        conn = get_db()
+        if module_slug == "lab-results" and action == "add_lab_result":
+            if not (patient or doctor):
+                flash("Please log in as patient or doctor to add lab results.", "warning")
+                return redirect(url_for("consult_patient_login", next=url_for("consult_module_page", slug=module_slug)))
+
+            if patient:
+                patient_id = patient["id"]
+            else:
+                patient_id = _safe_int(request.form.get("patient_id", "0"), 0)
+
+            doctor_id = doctor["id"] if doctor else _safe_int(request.form.get("doctor_id", "0"), 0)
+            report_type = (request.form.get("report_type", "") or "").strip()
+            summary = (request.form.get("summary", "") or "").strip()
+            result_link = (request.form.get("result_link", "") or "").strip()
+            status = (request.form.get("status", "") or "").strip() or "Pending Review"
+
+            valid_patient = conn.execute("SELECT id FROM consult_patients WHERE id=?", (patient_id,)).fetchone()
+            valid_doctor = conn.execute("SELECT id FROM consult_doctors WHERE id=?", (doctor_id,)).fetchone() if doctor_id else None
+            if not valid_patient or not report_type or not summary:
+                flash("Patient, report type, and summary are required for lab result entry.", "danger")
+            else:
+                conn.execute(
+                    """INSERT INTO consult_lab_results(
+                           patient_id, doctor_id, report_type, summary, result_link, status, created_at, updated_at
+                       ) VALUES(?,?,?,?,?,?,?,?)""",
+                    (
+                        valid_patient["id"],
+                        valid_doctor["id"] if valid_doctor else None,
+                        report_type,
+                        summary,
+                        result_link,
+                        status,
+                        _now_text(),
+                        _now_text(),
+                    ),
+                )
+                conn.commit()
+                _audit_log("lab_result_added", target=f"patient:{valid_patient['id']}", details=report_type)
+                flash("Lab result entry added successfully.", "success")
+
+        elif module_slug in ("payments", "billing") and action == "add_payment":
+            if not patient:
+                flash("Patient login is required to create a payment entry.", "warning")
+                return redirect(url_for("consult_patient_login", next=url_for("consult_module_page", slug=module_slug)))
+
+            appointment_id = _safe_int(request.form.get("appointment_id", "0"), 0)
+            amount = _safe_float(request.form.get("amount", "0"), 0.0)
+            method = (request.form.get("method", "") or "").strip()
+            notes = (request.form.get("notes", "") or "").strip()
+            if amount <= 0 or not method:
+                flash("Payment amount and method are required.", "danger")
+            else:
+                if appointment_id:
+                    owned = conn.execute(
+                        "SELECT id FROM consult_appointments WHERE id=? AND patient_id=?",
+                        (appointment_id, patient["id"]),
+                    ).fetchone()
+                    if not owned:
+                        flash("Selected appointment is invalid for this patient.", "danger")
+                        return redirect(url_for("consult_module_page", slug=module_slug))
+                else:
+                    appointment_id = None
+                tx_ref = _generate_tx_ref()
+                conn.execute(
+                    """INSERT INTO consult_payments(
+                           appointment_id, patient_id, amount, currency, method, status, tx_ref, notes, created_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (appointment_id, patient["id"], amount, "GHS", method, "Paid", tx_ref, notes, _now_text()),
+                )
+                conn.commit()
+                _audit_log("payment_recorded", target=f"tx:{tx_ref}", details=f"amount={amount}")
+                flash("Payment recorded successfully.", "success")
+
+        elif module_slug == "settings" and action == "update_setting":
+            if not doctor:
+                flash("Doctor/admin login is required to update settings.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            setting_key = (request.form.get("setting_key", "") or "").strip()
+            setting_value = (request.form.get("setting_value", "") or "").strip()
+            if not setting_key:
+                flash("Setting key is required.", "danger")
+            else:
+                _upsert_setting(setting_key, setting_value)
+                _audit_log("setting_updated", target=setting_key, details=setting_value, actor_role="doctor", actor_id=doctor["id"])
+                flash("Setting updated successfully.", "success")
+
+        return redirect(url_for("consult_module_page", slug=module_slug))
+
+    module_data = _module_dataset(module_slug, patient, doctor)
+    return _render("consultation_module.html", module=module, module_slug=module_slug, module_data=module_data)
 
 
 @app.route("/consultation/quick-book", methods=["POST"])
@@ -584,6 +1045,7 @@ def consult_patient_signup():
             row = conn.execute("SELECT * FROM consult_patients WHERE email=?", (email,)).fetchone()
             session.clear()
             session["consult_patient_id"] = row["id"]
+            _audit_log("patient_signup", target=f"patient:{row['id']}", details=f"email={email}", actor_role="patient", actor_id=row["id"])
             flash("Patient account created successfully. You can now book appointments.", "success")
             return redirect(url_for("consult_patient_dashboard"))
     return _render("consultation_patient_signup.html")
@@ -723,6 +1185,7 @@ def consult_doctor_signup():
             row = conn.execute("SELECT * FROM consult_doctors WHERE email=?", (email,)).fetchone()
             session.clear()
             session["consult_doctor_id"] = row["id"]
+            _audit_log("doctor_signup", target=f"doctor:{row['id']}", details=f"email={email}", actor_role="doctor", actor_id=row["id"])
             flash("Doctor account created. Keep profile complete so patients can trust and book you.", "success")
             return redirect(url_for("consult_doctor_dashboard"))
     return _render("consultation_doctor_signup.html")
@@ -895,6 +1358,13 @@ def consult_book_appointment(doctor_id):
                 (code, patient["id"], doctor["id"], scheduled_for, visit_mode, reason, symptoms, "Requested", _now_text(), _now_text()),
             )
             conn.commit()
+            _audit_log(
+                "appointment_requested",
+                target=f"appointment:{code}",
+                details=f"doctor_id={doctor['id']};patient_id={patient['id']};mode={visit_mode}",
+                actor_role="patient",
+                actor_id=patient["id"],
+            )
             row = conn.execute("SELECT id FROM consult_appointments WHERE appointment_code=?", (code,)).fetchone()
             flash("Appointment request submitted successfully. Doctor will confirm shortly.", "success")
             return redirect(url_for("consult_patient_appointment_detail", appointment_id=row["id"]))
@@ -960,6 +1430,13 @@ def consult_patient_appointment_detail(appointment_id):
                     (reason, _now_text(), appt["id"]),
                 )
                 conn.commit()
+                _audit_log(
+                    "appointment_cancelled_by_patient",
+                    target=f"appointment:{appt['appointment_code']}",
+                    details=reason or "no reason provided",
+                    actor_role="patient",
+                    actor_id=patient["id"],
+                )
                 flash("Appointment has been cancelled.", "info")
         return redirect(url_for("consult_patient_appointment_detail", appointment_id=appointment_id))
 
@@ -1072,6 +1549,12 @@ def consult_doctor_appointment_detail(appointment_id):
                 (_now_text(), appt["id"]),
             )
             conn.commit()
+            _audit_log(
+                "appointment_confirmed_by_doctor",
+                target=f"appointment:{appt['appointment_code']}",
+                actor_role="doctor",
+                actor_id=doctor["id"],
+            )
             flash("Appointment confirmed.", "success")
         elif action == "reschedule":
             new_date = request.form.get("new_date", "").strip()
@@ -1089,6 +1572,13 @@ def consult_doctor_appointment_detail(appointment_id):
                         (scheduled_for, _now_text(), appt["id"]),
                     )
                     conn.commit()
+                    _audit_log(
+                        "appointment_rescheduled_by_doctor",
+                        target=f"appointment:{appt['appointment_code']}",
+                        details=f"scheduled_for={scheduled_for}",
+                        actor_role="doctor",
+                        actor_id=doctor["id"],
+                    )
                     flash("Appointment moved to new schedule.", "success")
                 except Exception:
                     flash("Invalid reschedule date/time.", "danger")
@@ -1101,6 +1591,13 @@ def consult_doctor_appointment_detail(appointment_id):
                 (reason, _now_text(), appt["id"]),
             )
             conn.commit()
+            _audit_log(
+                "appointment_cancelled_by_doctor",
+                target=f"appointment:{appt['appointment_code']}",
+                details=reason or "no reason provided",
+                actor_role="doctor",
+                actor_id=doctor["id"],
+            )
             flash("Appointment cancelled by doctor.", "warning")
         elif action == "complete":
             diagnosis = request.form.get("diagnosis", "").strip()
@@ -1115,6 +1612,13 @@ def consult_doctor_appointment_detail(appointment_id):
                 (diagnosis, prescription, doctor_notes, follow_up_date, meeting_link, _now_text(), appt["id"]),
             )
             conn.commit()
+            _audit_log(
+                "consultation_completed",
+                target=f"appointment:{appt['appointment_code']}",
+                details=f"follow_up_date={follow_up_date}",
+                actor_role="doctor",
+                actor_id=doctor["id"],
+            )
             flash("Consultation marked as completed.", "success")
         return redirect(url_for("consult_doctor_appointment_detail", appointment_id=appointment_id))
 

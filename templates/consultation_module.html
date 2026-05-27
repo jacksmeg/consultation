@@ -3,11 +3,11 @@
 {% block content %}
 <section class="section section-tight">
   <div class="shell">
-    <div class="card reveal">
+    <article class="card reveal">
       <span class="eyebrow">Module Workspace</span>
       <h1 class="page-title" style="margin-top:10px;">{{ module.title }}</h1>
       <p class="subtitle">{{ module.summary }}</p>
-      <div class="badge-row" style="margin-top:14px;">
+      <div class="badge-row" style="margin-top:12px;">
         {% for action in module.actions %}
           {% if action.kwargs %}
             <a class="btn btn-primary" href="{{ url_for(action.endpoint, **action.kwargs) }}">{{ action.label }}</a>
@@ -15,29 +15,490 @@
             <a class="btn btn-primary" href="{{ url_for(action.endpoint) }}">{{ action.label }}</a>
           {% endif %}
         {% endfor %}
-        <a class="btn btn-soft" href="{{ url_for('consultation_home') }}">Back to Dashboard</a>
+        <a class="btn btn-soft" href="{{ url_for('consultation_home') }}">Back to Consultation Dashboard</a>
       </div>
+    </article>
+  </div>
+</section>
+
+{% if module_slug == 'medical-records' %}
+<section class="section">
+  <div class="shell grid-3">
+    <article class="card kpi"><span class="pill pill-info">Completed Records</span><h3>{{ module_data.kpis.completed_records }}</h3><p class="tiny">Consultations with finalized clinical notes.</p></article>
+    <article class="card kpi"><span class="pill pill-ok">Diagnosis Entries</span><h3>{{ module_data.kpis.with_diagnosis }}</h3><p class="tiny">Records with diagnosis captured.</p></article>
+    <article class="card kpi"><span class="pill pill-pending">Prescriptions</span><h3>{{ module_data.kpis.with_prescription }}</h3><p class="tiny">Records containing prescription details.</p></article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.24rem;">Medical Record Register</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Appointment</th><th>Date</th><th>Patient</th><th>Doctor</th><th>Diagnosis</th><th>Prescription</th></tr>
+        </thead>
+        <tbody>
+          {% for row in module_data.records %}
+            <tr>
+              <td>{{ row.appointment_code }}</td>
+              <td>{{ row.scheduled_for|fmt_dt }}</td>
+              <td>{{ row.patient_name }}</td>
+              <td>{{ row.doctor_name }}<br><span class="tiny">{{ row.specialty }}</span></td>
+              <td>{{ row.diagnosis or '-' }}</td>
+              <td>{{ row.prescription or '-' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6">No completed medical records available yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
 
+{% elif module_slug == 'e-prescriptions' %}
 <section class="section">
-  <div class="shell grid-3">
-    <article class="card reveal">
-      <h2 class="page-title" style="font-size:1.2rem;">Operational Status</h2>
-      <p class="tiny">This module is now integrated into the professional consultation dashboard navigation and can be expanded with deeper workflows.</p>
-      <span class="pill pill-ok">Connected</span>
+  <div class="shell grid-2">
+    <article class="card kpi"><span class="pill pill-info">Total Prescriptions</span><h3>{{ module_data.kpis.total_prescriptions }}</h3><p class="tiny">Generated from completed consultations.</p></article>
+    <article class="card kpi"><span class="pill pill-ok">With Follow-up</span><h3>{{ module_data.kpis.with_follow_up }}</h3><p class="tiny">Includes scheduled follow-up dates.</p></article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.24rem;">Prescription Ledger</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Appointment</th><th>Date</th><th>Patient</th><th>Doctor</th><th>Prescription</th><th>Follow-up</th></tr>
+        </thead>
+        <tbody>
+          {% for row in module_data.prescriptions %}
+            <tr>
+              <td>{{ row.appointment_code }}</td>
+              <td>{{ row.scheduled_for|fmt_dt }}</td>
+              <td>{{ row.patient_name }}</td>
+              <td>{{ row.doctor_name }}</td>
+              <td>{{ row.prescription }}</td>
+              <td>{{ row.follow_up_date|fmt_date }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6">No prescription records found yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'lab-results' %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.24rem;">Submit Lab Result</h2>
+      {% if module_data.can_add %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="add_lab_result">
+
+        {% if not current_patient %}
+          <div>
+            <label>Patient</label>
+            <select class="input" name="patient_id" required>
+              <option value="">Select patient</option>
+              {% for p in module_data.patient_options %}
+                <option value="{{ p.id }}">{{ p.full_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
+        {% if not current_doctor %}
+          <div>
+            <label>Doctor (optional)</label>
+            <select class="input" name="doctor_id">
+              <option value="">No assigned doctor</option>
+              {% for d in module_data.doctor_options %}
+                <option value="{{ d.id }}">{{ d.full_name }} - {{ d.specialty }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
+        <div>
+          <label>Report Type</label>
+          <input class="input" type="text" name="report_type" placeholder="CBC, Lipid Profile, X-Ray" required>
+        </div>
+        <div>
+          <label>Status</label>
+          <select class="input" name="status">
+            <option>Pending Review</option>
+            <option>Reviewed</option>
+            <option>Critical Follow-up</option>
+          </select>
+        </div>
+        <div>
+          <label>Result Link (optional)</label>
+          <input class="input" type="text" name="result_link" placeholder="https://...">
+        </div>
+        <div>
+          <label>Summary</label>
+          <textarea class="input" name="summary" rows="4" required></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">Save Lab Result</button>
+      </form>
+      {% else %}
+        <p class="tiny">Please login as patient or doctor to add lab entries.</p>
+      {% endif %}
     </article>
-    <article class="card reveal delay-1">
-      <h2 class="page-title" style="font-size:1.2rem;">Security</h2>
-      <p class="tiny">Role-based access is enforced through patient and doctor sessions, with secure appointment data controls.</p>
-      <span class="pill pill-info">Protected</span>
-    </article>
-    <article class="card reveal delay-2">
-      <h2 class="page-title" style="font-size:1.2rem;">Roadmap</h2>
-      <p class="tiny">If you want, I can now build the next version of this module with full data entry forms and reports tailored to your hospital process.</p>
-      <span class="pill pill-pending">Ready for Expansion</span>
+
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.24rem;">Recent Lab Results</h2>
+      <div style="display:grid;gap:10px;max-height:520px;overflow:auto;">
+        {% for row in module_data.lab_rows %}
+          <div class="msg">
+            <small>{{ row.created_at|fmt_dt }} | {{ row.report_type }}</small>
+            <strong>{{ row.patient_name }}</strong>
+            <div class="tiny">Doctor: {{ row.doctor_name or 'Unassigned' }} | Status: {{ row.status }}</div>
+            <div class="tiny" style="margin-top:4px;">{{ row.summary }}</div>
+            {% if row.result_link %}<a class="btn btn-soft" style="margin-top:8px;" href="{{ row.result_link }}" target="_blank">Open Result Link</a>{% endif %}
+          </div>
+        {% else %}
+          <p class="tiny">No lab results submitted yet.</p>
+        {% endfor %}
+      </div>
     </article>
   </div>
 </section>
+
+{% elif module_slug in ['payments','billing'] %}
+<section class="section">
+  <div class="shell grid-3">
+    <article class="card kpi"><span class="pill pill-ok">Total Paid</span><h3>GHS {{ '%.2f'|format(module_data.total_paid or 0) }}</h3><p class="tiny">Captured in payment ledger.</p></article>
+    <article class="card">
+      <h3 style="margin-top:0;color:#0f2f5d;">Method Distribution</h3>
+      <div style="display:grid;gap:8px;">
+        {% for name, total in module_data.method_totals %}
+          <div class="tiny"><strong>{{ name }}</strong>: GHS {{ '%.2f'|format(total or 0) }}</div>
+        {% else %}
+          <div class="tiny">No payment method data yet.</div>
+        {% endfor %}
+      </div>
+    </article>
+    <article class="card kpi"><span class="pill pill-info">Transactions</span><h3>{{ module_data.payments|length }}</h3><p class="tiny">Recent payment entries available.</p></article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.24rem;">Record Payment</h2>
+      {% if module_data.can_pay %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="add_payment">
+        <div>
+          <label>Appointment</label>
+          <select class="input" name="appointment_id">
+            <option value="">General payment (no appointment)</option>
+            {% for appt in module_data.due_appointments %}
+              <option value="{{ appt.id }}">{{ appt.appointment_code }} | {{ appt.doctor_name }} | {{ appt.scheduled_for|fmt_dt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Amount (GHS)</label>
+          <input class="input" type="number" name="amount" min="0" step="0.01" required>
+        </div>
+        <div>
+          <label>Payment Method</label>
+          <select class="input" name="method" required>
+            <option value="">Select method</option>
+            <option>Mobile Money</option>
+            <option>Card</option>
+            <option>Cash</option>
+            <option>Bank Transfer</option>
+          </select>
+        </div>
+        <div>
+          <label>Notes</label>
+          <textarea class="input" rows="3" name="notes"></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">Submit Payment</button>
+      </form>
+      {% else %}
+        <p class="tiny">Patient login is required to create payment entries.</p>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.24rem;">Recent Transactions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Tx Ref</th><th>Patient</th><th>Method</th><th>Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for row in module_data.payments %}
+              <tr>
+                <td>{{ row.created_at|fmt_dt }}</td>
+                <td>{{ row.tx_ref }}</td>
+                <td>{{ row.patient_name }}</td>
+                <td>{{ row.method }}</td>
+                <td>GHS {{ '%.2f'|format(row.amount or 0) }}</td>
+                <td>{{ row.status }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6">No payments captured yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
+
+{% elif module_slug == 'patients' %}
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.24rem;">Patient Registry</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Patient</th><th>Phone</th><th>Email</th><th>Total Consults</th><th>Completed</th><th>Last Login</th></tr>
+        </thead>
+        <tbody>
+          {% for p in module_data.patients %}
+            <tr>
+              <td>{{ p.full_name }}</td>
+              <td>{{ p.phone }}</td>
+              <td>{{ p.email }}</td>
+              <td>{{ p.total_consults or 0 }}</td>
+              <td>{{ p.completed_consults or 0 }}</td>
+              <td>{{ p.last_login_at|fmt_dt }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6">No patient records available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'consultations' %}
+<section class="section">
+  <div class="shell card">
+    <div class="section-head">
+      <div>
+        <h2 class="page-title" style="font-size:1.24rem;margin-bottom:0;">Consultation Pipeline</h2>
+      </div>
+      <form method="get" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="margin:0;">Status Filter</label>
+        <select class="input" name="status" style="width:220px;">
+          <option value="">All statuses</option>
+          {% for s in module_data.status_counts %}
+            <option value="{{ s.status }}" {% if module_data.status_filter == s.status %}selected{% endif %}>{{ s.status }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-soft" type="submit">Apply</button>
+        <a class="btn btn-soft" href="{{ url_for('consult_module_page', slug='consultations') }}">Clear</a>
+      </form>
+    </div>
+
+    <div class="badge-row" style="margin-bottom:12px;">
+      {% for s in module_data.status_counts %}
+        <span class="pill pill-info">{{ s.status }}: {{ s.c }}</span>
+      {% endfor %}
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Code</th><th>When</th><th>Patient</th><th>Doctor</th><th>Mode</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for row in module_data.consultations %}
+            <tr>
+              <td>{{ row.appointment_code }}</td>
+              <td>{{ row.scheduled_for|fmt_dt }}</td>
+              <td>{{ row.patient_name }}</td>
+              <td>{{ row.doctor_name }}<br><span class="tiny">{{ row.specialty }}</span></td>
+              <td>{{ row.visit_mode }}</td>
+              <td>{{ row.status }}</td>
+              <td>
+                {% if current_doctor and row.doctor_id == current_doctor.id %}
+                  <a class="btn btn-soft" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=row.id) }}">Manage</a>
+                {% elif current_patient and row.patient_id == current_patient.id %}
+                  <a class="btn btn-soft" href="{{ url_for('consult_patient_appointment_detail', appointment_id=row.id) }}">Open</a>
+                {% else %}
+                  <span class="tiny">View Only</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7">No consultations found for current filter.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'reports' %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Appointments by Status</h2>
+      <div style="display:grid;gap:8px;">
+        {% for row in module_data.status_counts %}
+          <div class="msg"><strong>{{ row.status }}</strong><span class="tiny" style="margin-left:8px;">{{ row.c }} records</span></div>
+        {% else %}
+          <div class="tiny">No status analytics available yet.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Doctors by Department</h2>
+      <div style="display:grid;gap:8px;">
+        {% for row in module_data.specialty_counts %}
+          <div class="msg"><strong>{{ row.specialty }}</strong><span class="tiny" style="margin-left:8px;">{{ row.c }} active doctors</span></div>
+        {% else %}
+          <div class="tiny">No department distribution available yet.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Daily Appointment Trend (Last 14 Entries)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Appointments Created</th></tr></thead>
+        <tbody>
+          {% for row in module_data.daily_counts %}
+            <tr><td>{{ row.day|fmt_date }}</td><td>{{ row.c }}</td></tr>
+          {% else %}
+            <tr><td colspan="2">No trend data available yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'users-roles' %}
+<section class="section">
+  <div class="shell grid-3">
+    <article class="card kpi"><span class="pill pill-info">Patients</span><h3>{{ module_data.counts.patients }}</h3><p class="tiny">Registered patient accounts.</p></article>
+    <article class="card kpi"><span class="pill pill-ok">Doctors</span><h3>{{ module_data.counts.doctors }}</h3><p class="tiny">Doctor accounts in system.</p></article>
+    <article class="card kpi"><span class="pill pill-pending">Consultations</span><h3>{{ module_data.counts.appointments }}</h3><p class="tiny">Total consultation records.</p></article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Role Permission Matrix</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Role</th><th>Current Access</th></tr></thead>
+        <tbody>
+          {% for row in module_data.roles %}
+            <tr><td>{{ row.role }}</td><td>{{ row.permissions }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'departments' %}
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Clinical Departments</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Department</th><th>Active Doctors</th></tr></thead>
+        <tbody>
+          {% for row in module_data.departments %}
+            <tr><td>{{ row.department }}</td><td>{{ row.doctors }}</td></tr>
+          {% else %}
+            <tr><td colspan="2">No department setup found yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'settings' %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">System Settings</h2>
+      {% if module_data.can_edit %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="update_setting">
+        <div>
+          <label>Setting Key</label>
+          <input class="input" name="setting_key" placeholder="support_phone" required>
+        </div>
+        <div>
+          <label>Setting Value</label>
+          <input class="input" name="setting_value" placeholder="050 805 0007" required>
+        </div>
+        <button class="btn btn-primary" type="submit">Update Setting</button>
+      </form>
+      {% else %}
+      <p class="tiny">Doctor/admin login is required to modify settings.</p>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Current Configuration</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Value</th><th>Updated</th></tr></thead>
+          <tbody>
+            {% for row in module_data.settings %}
+              <tr><td>{{ row.setting_key }}</td><td>{{ row.setting_value }}</td><td>{{ row.updated_at|fmt_dt }}</td></tr>
+            {% else %}
+              <tr><td colspan="3">No settings available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
+
+{% elif module_slug == 'audit-logs' %}
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Audit Event Stream</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+        <tbody>
+          {% for row in module_data.logs %}
+            <tr>
+              <td>{{ row.created_at|fmt_dt }}</td>
+              <td>{{ row.actor_role }}{% if row.actor_id %} #{{ row.actor_id }}{% endif %}</td>
+              <td>{{ row.action }}</td>
+              <td>{{ row.target or '-' }}</td>
+              <td>{{ row.details or '-' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">No audit logs recorded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% else %}
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Module Workspace</h2>
+    <p class="tiny">This module is now connected. Additional operational workflows can be activated next.</p>
+  </div>
+</section>
+{% endif %}
 {% endblock %}
