@@ -141,7 +141,7 @@
           </nav>
           <div class="who">
             <span class="bell"><i class="fa-regular fa-bell"></i><b>3</b></span>
-            <span class="avatar"><img src="{{ url_for('static', filename='img/consultation_doctor.png') }}" alt="Profile"></span>
+            <span class="avatar"><img src="{{ url_for('static', filename='img/consultation_doctor_avatar.png') }}" alt="Profile"></span>
             <span>
               {% if current_doctor %}Dr. {{ current_doctor.full_name }}<br><small style="color:#9ec0ea;font-size:.72rem;">Doctor Account</small>
               {% elif current_patient %}{{ current_patient.full_name }}<br><small style="color:#9ec0ea;font-size:.72rem;">Patient Account</small>
@@ -184,7 +184,7 @@
                 </div>
               </div>
               <div class="hero-r">
-                <img src="{{ url_for('static', filename='img/consultation_doctor.png') }}" alt="Doctor">
+                <img src="{{ url_for('static', filename='img/consultation_doctor_clean.png') }}" alt="Doctor">
                 <div class="note">
                   <span class="n"><i class="fa-solid fa-shield-heart"></i></span>
                   <span><strong>We're here for you</strong><span>Secure. Private. Reliable. Your health, our priority.</span></span>
