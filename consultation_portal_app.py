@@ -52,6 +52,105 @@ DOCTOR_SPECIALTIES = [
     "Orthopedics",
 ]
 
+MODULE_PAGES = {
+    "medical-records": {
+        "title": "Medical Records",
+        "summary": "Patient history, allergies, diagnoses, and visit records in one secure workspace.",
+        "actions": [
+            {"label": "Patient Dashboard", "endpoint": "consult_patient_dashboard"},
+            {"label": "Find Doctors", "endpoint": "consult_doctor_directory"},
+        ],
+    },
+    "e-prescriptions": {
+        "title": "e-Prescriptions",
+        "summary": "Digital prescriptions shared between doctors and patients with clear refill tracking.",
+        "actions": [
+            {"label": "Patient Appointments", "endpoint": "consult_patient_dashboard"},
+            {"label": "Doctor Dashboard", "endpoint": "consult_doctor_dashboard"},
+        ],
+    },
+    "lab-results": {
+        "title": "Lab Results",
+        "summary": "Upload, review, and share investigation results linked to consultation encounters.",
+        "actions": [
+            {"label": "Patient Dashboard", "endpoint": "consult_patient_dashboard"},
+            {"label": "Doctor Dashboard", "endpoint": "consult_doctor_dashboard"},
+        ],
+    },
+    "payments": {
+        "title": "Payments",
+        "summary": "Track consultation fees, service charges, and payment confirmations.",
+        "actions": [
+            {"label": "Book Consultation", "endpoint": "consult_doctor_directory"},
+            {"label": "Patient Dashboard", "endpoint": "consult_patient_dashboard"},
+        ],
+    },
+    "patients": {
+        "title": "Patients",
+        "summary": "Doctor-facing patient queue with consultation status and communication history.",
+        "actions": [
+            {"label": "Doctor Dashboard", "endpoint": "consult_doctor_dashboard"},
+            {"label": "Consultations", "endpoint": "consult_doctor_dashboard"},
+        ],
+    },
+    "consultations": {
+        "title": "Consultations",
+        "summary": "Consultation tracking center for appointment lifecycle and follow-ups.",
+        "actions": [
+            {"label": "Patient Portal", "endpoint": "consult_patient_dashboard"},
+            {"label": "Doctor Portal", "endpoint": "consult_doctor_dashboard"},
+        ],
+    },
+    "reports": {
+        "title": "Reports",
+        "summary": "Operational analytics for appointment volume, completion trends, and doctor activity.",
+        "actions": [
+            {"label": "Consultation Home", "endpoint": "consultation_home"},
+            {"label": "Doctor Dashboard", "endpoint": "consult_doctor_dashboard"},
+        ],
+    },
+    "users-roles": {
+        "title": "Users & Roles",
+        "summary": "Access governance for patient, doctor, and administrative user permissions.",
+        "actions": [
+            {"label": "Consultation Home", "endpoint": "consultation_home"},
+            {"label": "Doctor Dashboard", "endpoint": "consult_doctor_dashboard"},
+        ],
+    },
+    "departments": {
+        "title": "Departments",
+        "summary": "Organize doctor specialties and departmental consultation routing.",
+        "actions": [
+            {"label": "Find Doctors", "endpoint": "consult_doctor_directory"},
+            {"label": "Consultation Home", "endpoint": "consultation_home"},
+        ],
+    },
+    "settings": {
+        "title": "System Settings",
+        "summary": "Portal configuration for schedules, availability, and operational preferences.",
+        "actions": [
+            {"label": "Consultation Home", "endpoint": "consultation_home"},
+            {"label": "Doctor Profile", "endpoint": "consult_doctor_profile"},
+        ],
+    },
+    "audit-logs": {
+        "title": "Audit Logs",
+        "summary": "Review security and activity events across the consultation platform.",
+        "actions": [
+            {"label": "Consultation Home", "endpoint": "consultation_home"},
+            {"label": "Reports", "endpoint": "consult_module_page", "kwargs": {"slug": "reports"}},
+        ],
+    },
+    "billing": {
+        "title": "Billing",
+        "summary": "Billing operations center for consultation fees and revenue reconciliation.",
+        "actions": [
+            {"label": "Payments", "endpoint": "consult_module_page", "kwargs": {"slug": "payments"}},
+            {"label": "Reports", "endpoint": "consult_module_page", "kwargs": {"slug": "reports"}},
+        ],
+    },
+}
+
 
 def _now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -68,6 +167,13 @@ def _appointment_code() -> str:
 def _safe_int(value, default=0):
     try:
         return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(str(value).strip())
     except Exception:
         return default
 
@@ -287,12 +393,157 @@ def _bootstrap():
 @app.route("/")
 @app.route("/consultation")
 def consultation_home():
-    return _render("consultation_home.html")
+    conn = get_db()
+    total_appointments = conn.execute("SELECT COUNT(*) AS c FROM consult_appointments").fetchone()["c"]
+    active_doctors = conn.execute("SELECT COUNT(*) AS c FROM consult_doctors WHERE status='active'").fetchone()["c"]
+    completed_consults = conn.execute(
+        "SELECT COUNT(*) AS c FROM consult_appointments WHERE status='Completed'"
+    ).fetchone()["c"]
+    upcoming_consults = conn.execute(
+        "SELECT COUNT(*) AS c FROM consult_appointments WHERE status IN ('Requested','Confirmed','Reschedule Requested')"
+    ).fetchone()["c"]
+
+    upcoming_rows = conn.execute(
+        """SELECT a.id, a.appointment_code, a.scheduled_for, a.status, a.visit_mode,
+                  p.full_name AS patient_name, d.full_name AS doctor_name, d.specialty
+           FROM consult_appointments a
+           JOIN consult_patients p ON p.id=a.patient_id
+           JOIN consult_doctors d ON d.id=a.doctor_id
+           WHERE a.status IN ('Requested','Confirmed','Reschedule Requested')
+           ORDER BY a.scheduled_for ASC, a.id ASC
+           LIMIT 5"""
+    ).fetchall()
+
+    schedule_rows = conn.execute(
+        """SELECT a.id, a.scheduled_for, a.status, p.full_name AS patient_name
+           FROM consult_appointments a
+           JOIN consult_patients p ON p.id=a.patient_id
+           WHERE a.status IN ('Confirmed','Reschedule Requested')
+           ORDER BY a.scheduled_for ASC, a.id ASC
+           LIMIT 5"""
+    ).fetchall()
+
+    quick_doctors = conn.execute(
+        """SELECT id, full_name, specialty
+           FROM consult_doctors
+           WHERE status='active'
+           ORDER BY full_name ASC
+           LIMIT 30"""
+    ).fetchall()
+
+    recent_booked = conn.execute(
+        "SELECT created_at FROM consult_appointments ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    recent_scheduled = conn.execute(
+        "SELECT updated_at, created_at FROM consult_appointments WHERE status='Confirmed' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    recent_in_progress = conn.execute(
+        "SELECT updated_at, created_at FROM consult_appointments WHERE status='Reschedule Requested' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    recent_completed = conn.execute(
+        "SELECT updated_at, created_at FROM consult_appointments WHERE status='Completed' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+    timeline = [
+        {
+            "label": "Appointment Booked",
+            "stamp": (recent_booked["created_at"] if recent_booked else ""),
+            "active": bool(recent_booked),
+        },
+        {
+            "label": "Consultation Scheduled",
+            "stamp": ((recent_scheduled["updated_at"] or recent_scheduled["created_at"]) if recent_scheduled else ""),
+            "active": bool(recent_scheduled),
+        },
+        {
+            "label": "Consultation in Progress",
+            "stamp": ((recent_in_progress["updated_at"] or recent_in_progress["created_at"]) if recent_in_progress else ""),
+            "active": bool(recent_in_progress),
+        },
+        {
+            "label": "Completed",
+            "stamp": ((recent_completed["updated_at"] or recent_completed["created_at"]) if recent_completed else ""),
+            "active": bool(recent_completed),
+        },
+    ]
+
+    today_view = {
+        "appointments": total_appointments,
+        "active_doctors": active_doctors,
+        "completed": completed_consults,
+        "rating": "4.8",
+        "upcoming": upcoming_consults,
+    }
+    return _render(
+        "consultation_home.html",
+        today_date=_date_text(),
+        current_year=datetime.now().year,
+        today_view=today_view,
+        quick_doctors=quick_doctors,
+        schedule_rows=schedule_rows,
+        upcoming_rows=upcoming_rows,
+        timeline=timeline,
+    )
 
 
 @app.route("/consultation/healthz")
 def consultation_healthz():
     return {"ok": True, "service": "jhims-consultation-portal", "date": _now_text(), "public_url": PUBLIC_URL}
+
+
+@app.route("/consultation/modules/<slug>")
+def consult_module_page(slug):
+    module = MODULE_PAGES.get((slug or "").strip().lower())
+    if not module:
+        flash("Requested module was not found.", "warning")
+        return redirect(url_for("consultation_home"))
+    return _render("consultation_module.html", module=module, module_slug=slug)
+
+
+@app.route("/consultation/quick-book", methods=["POST"])
+@patient_required
+def consult_quick_book():
+    patient = current_patient()
+    conn = get_db()
+    doctor_id = _safe_int(request.form.get("doctor_id", "0"), 0)
+    scheduled_date = (request.form.get("scheduled_date", "") or "").strip()
+    scheduled_time = (request.form.get("scheduled_time", "") or "").strip()
+    visit_mode = (request.form.get("visit_mode", "") or "").strip()
+    reason = (request.form.get("reason", "") or "").strip()
+    symptoms = (request.form.get("symptoms", "") or "").strip()
+
+    doctor = conn.execute("SELECT * FROM consult_doctors WHERE id=? AND status='active'", (doctor_id,)).fetchone()
+    if not doctor:
+        flash("Please select a valid active doctor for booking.", "danger")
+        return redirect(url_for("consultation_home"))
+    if not scheduled_date or not scheduled_time or not reason:
+        flash("Select date, time, and reason to submit booking.", "danger")
+        return redirect(url_for("consultation_home"))
+    if visit_mode not in VISIT_MODES:
+        flash("Please choose a valid consultation mode.", "danger")
+        return redirect(url_for("consultation_home"))
+
+    scheduled_for = f"{scheduled_date} {scheduled_time}:00"
+    try:
+        dt = datetime.strptime(scheduled_for, "%Y-%m-%d %H:%M:%S")
+        if dt < datetime.now():
+            flash("Please choose a future consultation date and time.", "danger")
+            return redirect(url_for("consultation_home"))
+    except Exception:
+        flash("Invalid date/time format for booking.", "danger")
+        return redirect(url_for("consultation_home"))
+
+    code = _appointment_code()
+    conn.execute(
+        """INSERT INTO consult_appointments(
+                appointment_code,patient_id,doctor_id,scheduled_for,visit_mode,reason,symptoms,status,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+        (code, patient["id"], doctor["id"], scheduled_for, visit_mode, reason, symptoms, "Requested", _now_text(), _now_text()),
+    )
+    conn.commit()
+    appt = conn.execute("SELECT id FROM consult_appointments WHERE appointment_code=?", (code,)).fetchone()
+    flash("Appointment booked successfully from quick booking panel.", "success")
+    return redirect(url_for("consult_patient_appointment_detail", appointment_id=appt["id"]))
 
 
 @app.route("/consultation/patient/signup", methods=["GET", "POST"])
