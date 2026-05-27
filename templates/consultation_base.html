@@ -556,9 +556,7 @@
           <a href="{{ url_for('consult_doctor_logout') }}" class="nav-cta">Doctor Logout</a>
         {% else %}
           <a href="{{ url_for('consult_patient_login') }}">Patient Login</a>
-          <a href="{{ url_for('consult_patient_signup') }}">Patient Signup</a>
-          <a href="{{ url_for('consult_doctor_login') }}">Doctor Login</a>
-          <a href="{{ url_for('consult_doctor_signup') }}" class="nav-cta">Join as Doctor</a>
+          <a href="{{ url_for('consult_patient_signup') }}" class="nav-cta">Create Patient Account</a>
         {% endif %}
       </nav>
     </div>
