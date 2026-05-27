@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}JHIMS Consultation{% endblock %}</title>
+  <meta name="theme-color" content="#0e9f9b">
+  <link rel="manifest" href="{{ url_for('consultation_manifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='jhims_logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
@@ -595,6 +598,10 @@
       toggle.addEventListener("click", function(){
         nav.classList.toggle("open");
       });
+    })();
+    (function () {
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.register("{{ url_for('consultation_service_worker') }}").catch(function(){});
     })();
   </script>
 </body>

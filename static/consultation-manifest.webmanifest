@@ -1,0 +1,17 @@
+{
+  "name": "JHIMS Consultation",
+  "short_name": "JHIMS Consult",
+  "description": "Patient and doctor consultation portal for booking, video calls, records, and billing.",
+  "start_url": "/consultation",
+  "scope": "/consultation",
+  "display": "standalone",
+  "background_color": "#041d45",
+  "theme_color": "#0e9f9b",
+  "icons": [
+    {
+      "src": "/static/jhims_logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

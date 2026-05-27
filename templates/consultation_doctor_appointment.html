@@ -16,6 +16,8 @@
             <span class="pill pill-bad">Cancelled</span>
           {% elif appt.status == 'Confirmed' %}
             <span class="pill pill-ok">Confirmed</span>
+          {% elif appt.status == 'In Progress' %}
+            <span class="pill pill-info">In Progress</span>
           {% elif appt.status == 'Requested' %}
             <span class="pill pill-pending">Requested</span>
           {% else %}
@@ -58,6 +60,7 @@
             <input class="input" name="doctor_cancel_reason" placeholder="Cancel reason">
             <button class="btn btn-danger" type="submit">Cancel</button>
           </form>
+          <a class="btn btn-soft" href="{{ url_for('consultation_video_room', appointment_id=appt.id) }}">Open Video Room</a>
         </div>
       {% endif %}
     </div>

@@ -69,7 +69,7 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Appointment</th><th>Date</th><th>Patient</th><th>Doctor</th><th>Prescription</th><th>Follow-up</th></tr>
+          <tr><th>Appointment</th><th>Date</th><th>Patient</th><th>Doctor</th><th>Prescription</th><th>Follow-up</th><th>Print</th></tr>
         </thead>
         <tbody>
           {% for row in module_data.prescriptions %}
@@ -80,13 +80,87 @@
               <td>{{ row.doctor_name }}</td>
               <td>{{ row.prescription }}</td>
               <td>{{ row.follow_up_date|fmt_date }}</td>
+              <td><a class="btn btn-soft" href="{{ url_for('consultation_print_prescription', appointment_id=row.id) }}" target="_blank">Print RX</a></td>
             </tr>
           {% else %}
-            <tr><td colspan="6">No prescription records found yet.</td></tr>
+            <tr><td colspan="7">No prescription records found yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+  </div>
+</section>
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Refill Workflow</h2>
+      {% if module_data.can_request_refill %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="request_refill">
+        <div>
+          <label>Prescription Appointment</label>
+          <select class="input" name="appointment_id" required>
+            <option value="">Select appointment</option>
+            {% for row in module_data.prescriptions %}
+            <option value="{{ row.id }}">{{ row.appointment_code }} | {{ row.doctor_name }} | {{ row.scheduled_for|fmt_dt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Medication Summary</label>
+          <input class="input" name="medication_summary" placeholder="Drug name, dosage, frequency" required>
+        </div>
+        <div>
+          <label>Request Note</label>
+          <textarea class="input" rows="3" name="request_note" placeholder="Any refill details"></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">Submit Refill Request</button>
+      </form>
+      {% elif module_data.can_resolve_refill %}
+      <p class="tiny">Use the refill list to approve, defer, or reject refill requests.</p>
+      {% else %}
+      <p class="tiny">Login as patient or doctor to access refill workflow.</p>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Refill History</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Requested</th><th>Appointment</th><th>Patient</th><th>Medication</th><th>Status</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            {% for row in module_data.refills %}
+            <tr>
+              <td>{{ row.requested_at|fmt_dt }}</td>
+              <td>{{ row.appointment_code }}</td>
+              <td>{{ row.patient_name }}</td>
+              <td>{{ row.medication_summary }}</td>
+              <td>{{ row.refill_status }}</td>
+              <td>
+                {% if module_data.can_resolve_refill and row.refill_status in ['Requested','Pending Review'] %}
+                <form method="post" style="display:flex;gap:6px;align-items:center;">
+                  <input type="hidden" name="action" value="resolve_refill">
+                  <input type="hidden" name="refill_id" value="{{ row.id }}">
+                  <select class="input" name="refill_status" style="width:140px;">
+                    <option>Approved</option>
+                    <option>Pending Review</option>
+                    <option>Rejected</option>
+                  </select>
+                  <button class="btn btn-soft" type="submit">Save</button>
+                </form>
+                {% else %}
+                <span class="tiny">-</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6">No refill activity yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
   </div>
 </section>
 
@@ -168,6 +242,82 @@
     </article>
   </div>
 </section>
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Upload Lab/Documents</h2>
+      {% if module_data.can_add %}
+      <form method="post" enctype="multipart/form-data" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="add_document">
+        {% if not current_patient %}
+        <div>
+          <label>Patient</label>
+          <select class="input" name="patient_id" required>
+            <option value="">Select patient</option>
+            {% for p in module_data.patient_options %}
+            <option value="{{ p.id }}">{{ p.full_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        {% if not current_doctor %}
+        <div>
+          <label>Doctor (optional)</label>
+          <select class="input" name="doctor_id">
+            <option value="">Select doctor</option>
+            {% for d in module_data.doctor_options %}
+            <option value="{{ d.id }}">{{ d.full_name }} - {{ d.specialty }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <div>
+          <label>Linked Appointment</label>
+          <select class="input" name="appointment_id">
+            <option value="">General timeline upload</option>
+            {% for a in module_data.appointment_options %}
+            <option value="{{ a.id }}">{{ a.appointment_code }} | {{ a.scheduled_for|fmt_dt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Category</label>
+          <input class="input" name="category" placeholder="Lab Result / Scan / Medical File">
+        </div>
+        <div>
+          <label>Select File</label>
+          <input class="input" type="file" name="document_file" required>
+        </div>
+        <button class="btn btn-primary" type="submit">Upload Document</button>
+      </form>
+      {% else %}
+      <p class="tiny">Please login as patient or doctor to upload files.</p>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Patient Document Timeline</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Patient</th><th>Category</th><th>File</th><th>Appointment</th></tr></thead>
+          <tbody>
+            {% for doc in module_data.documents %}
+            <tr>
+              <td>{{ doc.created_at|fmt_dt }}</td>
+              <td>{{ doc.patient_name }}</td>
+              <td>{{ doc.category }}</td>
+              <td><a class="btn btn-soft" href="{{ url_for('consultation_download_document', doc_id=doc.id) }}">Download</a></td>
+              <td>{{ doc.appointment_code or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">No uploaded documents yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
 
 {% elif module_slug in ['payments','billing'] %}
 <section class="section">
@@ -183,7 +333,7 @@
         {% endfor %}
       </div>
     </article>
-    <article class="card kpi"><span class="pill pill-info">Transactions</span><h3>{{ module_data.payments|length }}</h3><p class="tiny">Recent payment entries available.</p></article>
+    <article class="card kpi"><span class="pill pill-pending">Outstanding</span><h3>GHS {{ '%.2f'|format(module_data.outstanding_total or 0) }}</h3><p class="tiny">{{ module_data.payments|length }} payments posted.</p></article>
   </div>
 </section>
 <section class="section">
@@ -251,6 +401,35 @@
         </table>
       </div>
     </article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Invoice, Receipt & Outstanding Dashboard</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Invoice</th><th>Appointment</th><th>Patient</th><th>Total</th><th>Paid</th><th>Outstanding</th><th>Status</th><th>Issued</th></tr>
+        </thead>
+        <tbody>
+          {% for inv in module_data.invoices %}
+          {% set outstanding = (inv.total_amount or 0) - (inv.paid_amount or 0) %}
+          <tr>
+            <td>{{ inv.invoice_no }}</td>
+            <td>{{ inv.appointment_code }}</td>
+            <td>{{ inv.patient_name }}</td>
+            <td>GHS {{ '%.2f'|format(inv.total_amount or 0) }}</td>
+            <td>GHS {{ '%.2f'|format(inv.paid_amount or 0) }}</td>
+            <td>GHS {{ '%.2f'|format(outstanding if outstanding > 0 else 0) }}</td>
+            <td>{{ inv.status }}</td>
+            <td>{{ inv.issued_at|fmt_dt }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8">No invoices generated yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </section>
 
@@ -325,8 +504,10 @@
               <td>
                 {% if current_doctor and row.doctor_id == current_doctor.id %}
                   <a class="btn btn-soft" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=row.id) }}">Manage</a>
+                  <a class="btn btn-soft" href="{{ url_for('consultation_video_room', appointment_id=row.id) }}">Room</a>
                 {% elif current_patient and row.patient_id == current_patient.id %}
                   <a class="btn btn-soft" href="{{ url_for('consult_patient_appointment_detail', appointment_id=row.id) }}">Open</a>
+                  <a class="btn btn-soft" href="{{ url_for('consultation_video_room', appointment_id=row.id) }}">Room</a>
                 {% else %}
                   <span class="tiny">View Only</span>
                 {% endif %}
@@ -408,6 +589,78 @@
     </div>
   </div>
 </section>
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Doctor Approval & Access</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Doctor</th><th>Specialty</th><th>Status</th><th>Verification</th><th>Action</th></tr></thead>
+          <tbody>
+            {% for d in module_data.doctors %}
+            <tr>
+              <td>{{ d.full_name }}</td>
+              <td>{{ d.specialty }}</td>
+              <td>{{ d.status }}</td>
+              <td>{{ d.verification_status }}</td>
+              <td>
+                {% if module_data.can_manage %}
+                <form method="post" style="display:flex;gap:6px;align-items:center;">
+                  <input type="hidden" name="action" value="update_doctor_status">
+                  <input type="hidden" name="doctor_id" value="{{ d.id }}">
+                  <select class="input" name="status" style="width:120px;">
+                    <option value="active" {% if d.status=='active' %}selected{% endif %}>active</option>
+                    <option value="inactive" {% if d.status=='inactive' %}selected{% endif %}>inactive</option>
+                  </select>
+                  <select class="input" name="verification_status" style="width:130px;">
+                    <option value="verified" {% if d.verification_status=='verified' %}selected{% endif %}>verified</option>
+                    <option value="pending" {% if d.verification_status=='pending' %}selected{% endif %}>pending</option>
+                    <option value="rejected" {% if d.verification_status=='rejected' %}selected{% endif %}>rejected</option>
+                  </select>
+                  <button class="btn btn-soft" type="submit">Save</button>
+                </form>
+                {% else %}
+                <span class="tiny">View only</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">No doctors found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Module Permission Editor</h2>
+      {% if module_data.can_manage %}
+      <form method="post" style="display:grid;gap:10px;margin-bottom:12px;">
+        <input type="hidden" name="action" value="update_module_permission">
+        <div><label>Role</label><select class="input" name="role_name"><option>patient</option><option>doctor</option><option>admin</option></select></div>
+        <div><label>Module</label><input class="input" name="permission_module_slug" placeholder="consultations" required></div>
+        <div class="grid-2">
+          <div><label>Can View</label><select class="input" name="can_view"><option value="1">Yes</option><option value="0">No</option></select></div>
+          <div><label>Can Edit</label><select class="input" name="can_edit"><option value="0">No</option><option value="1">Yes</option></select></div>
+        </div>
+        <button class="btn btn-primary" type="submit">Save Permission</button>
+      </form>
+      {% endif %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Role</th><th>Module</th><th>View</th><th>Edit</th></tr></thead>
+          <tbody>
+            {% for p in module_data.permissions %}
+            <tr><td>{{ p.role_name }}</td><td>{{ p.module_slug }}</td><td>{{ p.can_view }}</td><td>{{ p.can_edit }}</td></tr>
+            {% else %}
+            <tr><td colspan="4">No permission records.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
 
 {% elif module_slug == 'departments' %}
 <section class="section">
@@ -425,6 +678,62 @@
         </tbody>
       </table>
     </div>
+  </div>
+</section>
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Department Builder</h2>
+      {% if module_data.can_manage %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="add_department">
+        <div><label>Department Name</label><input class="input" name="name" placeholder="Cardiology" required></div>
+        <div><label>Description</label><textarea class="input" rows="3" name="description"></textarea></div>
+        <button class="btn btn-primary" type="submit">Save Department</button>
+      </form>
+      {% else %}
+      <p class="tiny">Doctor/admin login is required to manage departments.</p>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Assign Doctors to Departments</h2>
+      {% if module_data.can_manage %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="assign_doctor_department">
+        <div>
+          <label>Doctor</label>
+          <select class="input" name="doctor_id" required>
+            <option value="">Select doctor</option>
+            {% for d in module_data.doctor_department_rows %}
+            <option value="{{ d.id }}">{{ d.full_name }} ({{ d.specialty }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Department</label>
+          <select class="input" name="department_id" required>
+            <option value="">Select department</option>
+            {% for dep in module_data.departments %}
+            <option value="{{ dep.id }}">{{ dep.department }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="btn btn-soft" type="submit">Assign</button>
+      </form>
+      {% endif %}
+      <div class="table-wrap" style="margin-top:10px;">
+        <table>
+          <thead><tr><th>Doctor</th><th>Primary Specialty</th><th>Mapped Departments</th></tr></thead>
+          <tbody>
+            {% for row in module_data.doctor_department_rows %}
+            <tr><td>{{ row.full_name }}</td><td>{{ row.specialty }}</td><td>{{ row.department_names or '-' }}</td></tr>
+            {% else %}
+            <tr><td colspan="3">No doctor mapping records yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
   </div>
 </section>
 
@@ -490,6 +799,309 @@
         </tbody>
       </table>
     </div>
+  </div>
+</section>
+
+{% elif module_slug == 'video-room' %}
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Video Consultation Rooms</h2>
+    <p class="subtitle">Secure room access is generated per appointment. Ready rooms: {{ module_data.room_ready_count or 0 }}</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Code</th><th>Date</th><th>Patient</th><th>Doctor</th><th>Mode</th><th>Status</th><th>Open</th></tr></thead>
+        <tbody>
+          {% for row in module_data.appointments %}
+          <tr>
+            <td>{{ row.appointment_code }}</td>
+            <td>{{ row.scheduled_for|fmt_dt }}</td>
+            <td>{{ row.patient_name }}</td>
+            <td>{{ row.doctor_name }}</td>
+            <td>{{ row.visit_mode }}</td>
+            <td>{{ row.status }}</td>
+            <td><a class="btn btn-primary" href="{{ url_for('consultation_video_room', appointment_id=row.id) }}">Enter Room</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">No video-room eligible appointments found yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'availability' %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Availability Engine</h2>
+      <p class="tiny">Slot interval: {{ module_data.slot_minutes }} minutes</p>
+      {% if module_data.can_manage %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="add_slot">
+        <div class="grid-2">
+          <div><label>Date</label><input class="input" type="date" name="slot_date" required></div>
+          <div><label>Time</label><input class="input" type="time" name="slot_time" required></div>
+        </div>
+        <button class="btn btn-primary" type="submit">Add Slot</button>
+      </form>
+      {% else %}
+      <form method="get" style="display:grid;gap:10px;">
+        <label>Select Doctor</label>
+        <select class="input" name="doctor_id" required>
+          <option value="">Choose doctor</option>
+          {% for d in module_data.doctors %}
+          <option value="{{ d.id }}" {% if module_data.selected_doctor_id == d.id %}selected{% endif %}>{{ d.full_name }} - {{ d.specialty }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-soft" type="submit">Load Slots</button>
+      </form>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Reschedule Assistant</h2>
+      <div style="display:grid;gap:8px;">
+        {% for s in module_data.suggested_slots %}
+        <div class="msg"><strong>{{ s.scheduled_for|fmt_dt }}</strong><span class="tiny" style="margin-left:6px;">{{ s.source }}</span></div>
+        {% else %}
+        <div class="tiny">No suggestions available yet.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </div>
+</section>
+{% if module_data.can_manage %}
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">My Active Slots</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Time</th><th>Source</th><th>Action</th></tr></thead>
+        <tbody>
+          {% for slot in module_data.doctor_slots %}
+          <tr>
+            <td>{{ slot.slot_date|fmt_date }}</td>
+            <td>{{ slot.slot_time }}</td>
+            <td>{{ slot.source }}</td>
+            <td>
+              <form method="post">
+                <input type="hidden" name="action" value="remove_slot">
+                <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                <button class="btn btn-soft" type="submit">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">No availability slots created yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% elif module_slug == 'admin-control' %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Doctor Approval</h2>
+      {% if module_data.can_manage %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Doctor</th><th>Specialty</th><th>Status</th><th>Verification</th><th>Save</th></tr></thead>
+          <tbody>
+            {% for d in module_data.doctors %}
+            <tr>
+              <td>{{ d.full_name }}</td>
+              <td>{{ d.specialty }}</td>
+              <td>{{ d.status }}</td>
+              <td>{{ d.verification_status }}</td>
+              <td>
+                <form method="post" style="display:flex;gap:6px;align-items:center;">
+                  <input type="hidden" name="action" value="update_doctor_status">
+                  <input type="hidden" name="doctor_id" value="{{ d.id }}">
+                  <select class="input" name="status" style="width:110px;"><option value="active">active</option><option value="inactive">inactive</option></select>
+                  <select class="input" name="verification_status" style="width:120px;"><option value="verified">verified</option><option value="pending">pending</option><option value="rejected">rejected</option></select>
+                  <button class="btn btn-soft" type="submit">Save</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="tiny">Admin access required.</p>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Pricing Console</h2>
+      {% if module_data.can_manage %}
+      <form method="post" style="display:grid;gap:10px;margin-bottom:12px;">
+        <input type="hidden" name="action" value="set_pricing">
+        <div><label>Service Key</label><input class="input" name="service_key" placeholder="general_consultation" required></div>
+        <div><label>Amount</label><input class="input" type="number" min="0" step="0.01" name="amount" required></div>
+        <button class="btn btn-primary" type="submit">Save Pricing</button>
+      </form>
+      {% endif %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Value</th><th>Updated</th></tr></thead>
+          <tbody>
+            {% for p in module_data.pricing %}
+            <tr><td>{{ p.setting_key }}</td><td>{{ p.setting_value }}</td><td>{{ p.updated_at|fmt_dt }}</td></tr>
+            {% else %}
+            <tr><td colspan="3">No pricing records.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
+
+{% elif module_slug == 'notifications' %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Queue Notification</h2>
+      {% if module_data.can_manage %}
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="queue_notification">
+        <div class="grid-2">
+          <div><label>Channel</label><select class="input" name="channel"><option>whatsapp</option><option>sms</option><option>email</option></select></div>
+          <div><label>Recipient Role</label><select class="input" name="recipient_role"><option>patient</option><option>doctor</option><option>system</option></select></div>
+        </div>
+        <div><label>Recipient ID (optional)</label><input class="input" name="recipient_id" type="number" min="0"></div>
+        <div><label>Appointment ID (optional)</label><input class="input" name="appointment_id" type="number" min="0"></div>
+        <div><label>Subject</label><input class="input" name="subject" required></div>
+        <div><label>Message</label><textarea class="input" rows="3" name="message" required></textarea></div>
+        <button class="btn btn-primary" type="submit">Queue</button>
+      </form>
+      {% else %}
+      <p class="tiny">Admin/doctor login required to queue manual notifications.</p>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Channel Health</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Channel</th><th>Status</th><th>Count</th></tr></thead>
+          <tbody>
+            {% for stat in module_data.stats %}
+            <tr><td>{{ stat.channel }}</td><td>{{ stat.status }}</td><td>{{ stat.c }}</td></tr>
+            {% else %}
+            <tr><td colspan="3">No notification statistics yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.2rem;">Notification Log</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Created</th><th>Channel</th><th>Recipient</th><th>Subject</th><th>Status</th><th>Appointment</th></tr></thead>
+        <tbody>
+          {% for row in module_data.notifications %}
+          <tr>
+            <td>{{ row.created_at|fmt_dt }}</td>
+            <td>{{ row.channel }}</td>
+            <td>{{ row.recipient_role }}{% if row.recipient_id %} #{{ row.recipient_id }}{% endif %}</td>
+            <td>{{ row.subject }}</td>
+            <td>{{ row.status }}</td>
+            <td>{{ row.appointment_code or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">No notification entries yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% elif module_slug == 'analytics-pro' %}
+<section class="section">
+  <div class="shell grid-4">
+    <article class="card kpi"><span class="pill pill-info">Appointments</span><h3>{{ module_data.kpis.total_appointments }}</h3><p class="tiny">Total consultations registered.</p></article>
+    <article class="card kpi"><span class="pill pill-ok">Completed</span><h3>{{ module_data.kpis.completed }}</h3><p class="tiny">Consultations closed successfully.</p></article>
+    <article class="card kpi"><span class="pill pill-pending">No-show Rate</span><h3>{{ module_data.kpis.no_show_rate }}%</h3><p class="tiny">Based on cancelled appointment ratio.</p></article>
+    <article class="card kpi"><span class="pill pill-ok">Revenue</span><h3>GHS {{ '%.2f'|format(module_data.kpis.total_revenue or 0) }}</h3><p class="tiny">Paid revenue captured.</p></article>
+  </div>
+</section>
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Doctor Performance</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Doctor</th><th>Specialty</th><th>Total</th><th>Completed</th><th>Completion %</th></tr></thead>
+          <tbody>
+            {% for row in module_data.doctor_performance %}
+            <tr><td>{{ row.full_name }}</td><td>{{ row.specialty }}</td><td>{{ row.total_consults }}</td><td>{{ row.completed_consults or 0 }}</td><td>{{ row.completion_rate }}%</td></tr>
+            {% else %}
+            <tr><td colspan="5">No doctor performance data.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Specialty Demand</h2>
+      <div style="display:grid;gap:8px;">
+        {% for row in module_data.specialty_demand %}
+        <div class="msg"><strong>{{ row.specialty }}</strong><span class="tiny" style="margin-left:8px;">{{ row.demand }} consultations</span></div>
+        {% else %}
+        <div class="tiny">No specialty demand data yet.</div>
+        {% endfor %}
+      </div>
+      <h3 style="margin-top:14px;color:#0f2f5d;">Revenue Trend (Recent)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Revenue</th></tr></thead>
+          <tbody>
+            {% for row in module_data.revenue_trends %}
+            <tr><td>{{ row.day|fmt_date }}</td><td>GHS {{ '%.2f'|format(row.revenue or 0) }}</td></tr>
+            {% else %}
+            <tr><td colspan="2">No revenue trend entries yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
+
+{% elif module_slug == 'mobile-pwa' %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Patient Mobile Experience</h2>
+      <p class="subtitle">Install JHIMS Consultation on phone for app-like booking and follow-up updates.</p>
+      <div class="badge-row" style="margin-top:12px;">
+        <a class="btn btn-primary" href="{{ module_data.manifest_url }}" target="_blank">View Manifest</a>
+        <a class="btn btn-soft" href="{{ module_data.service_worker_url }}" target="_blank">Service Worker</a>
+      </div>
+      <ul style="margin-top:12px;color:#45638a;">
+        <li>Home-screen install support</li>
+        <li>Fast revisit through caching</li>
+        <li>Mobile-first quick links</li>
+      </ul>
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.2rem;">Quick Actions</h2>
+      <div style="display:grid;gap:10px;">
+        {% for link in module_data.quick_links %}
+        <a class="btn btn-primary" href="{{ link.url }}">{{ link.label }}</a>
+        {% endfor %}
+      </div>
+      <p class="tiny" style="margin-top:12px;">On mobile browser: open menu and choose "Add to Home screen".</p>
+    </article>
   </div>
 </section>
 

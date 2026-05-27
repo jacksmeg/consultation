@@ -22,10 +22,12 @@ import os
 import re
 import secrets
 import sqlite3
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, g, flash, redirect, render_template, request, session, url_for
+from flask import Flask, g, flash, redirect, render_template, request, session, url_for, send_from_directory, jsonify
+from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -34,6 +36,27 @@ DB_PATH = os.environ.get("JHIMS_CONSULTATION_DB", os.path.join(BASE_DIR, "consul
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 PUBLIC_URL = os.environ.get("JHIMS_CONSULTATION_PUBLIC_URL", "https://consultation.jhimssoftware.com")
 PORT = int(os.environ.get("PORT") or os.environ.get("JHIMS_CONSULTATION_PORT", "5052"))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "consultation_docs")
+ALLOWED_DOC_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp", "txt", "doc", "docx"}
+DAYS_LOOKUP = {
+    "mon": 0,
+    "monday": 0,
+    "tue": 1,
+    "tues": 1,
+    "tuesday": 1,
+    "wed": 2,
+    "wednesday": 2,
+    "thu": 3,
+    "thur": 3,
+    "thurs": 3,
+    "thursday": 3,
+    "fri": 4,
+    "friday": 4,
+    "sat": 5,
+    "saturday": 5,
+    "sun": 6,
+    "sunday": 6,
+}
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
 app.secret_key = os.environ.get("JHIMS_CONSULTATION_SECRET_KEY", "consultation-change-me")
@@ -149,6 +172,54 @@ MODULE_PAGES = {
             {"label": "Reports", "endpoint": "consult_module_page", "kwargs": {"slug": "reports"}},
         ],
     },
+    "video-room": {
+        "title": "Video Consultation Room",
+        "summary": "Secure in-browser video calls, live chat, and consultation notes per appointment.",
+        "actions": [
+            {"label": "Consultations", "endpoint": "consult_module_page", "kwargs": {"slug": "consultations"}},
+            {"label": "Doctor Dashboard", "endpoint": "consult_doctor_dashboard"},
+        ],
+    },
+    "availability": {
+        "title": "Doctor Availability Engine",
+        "summary": "Real time slot calendar with conflict prevention and smart reschedule suggestions.",
+        "actions": [
+            {"label": "Doctor Profile", "endpoint": "consult_doctor_profile"},
+            {"label": "Consultations", "endpoint": "consult_module_page", "kwargs": {"slug": "consultations"}},
+        ],
+    },
+    "admin-control": {
+        "title": "Admin Control Center",
+        "summary": "Approve doctors, manage departments, pricing, and module permissions in one place.",
+        "actions": [
+            {"label": "Users & Roles", "endpoint": "consult_module_page", "kwargs": {"slug": "users-roles"}},
+            {"label": "System Settings", "endpoint": "consult_module_page", "kwargs": {"slug": "settings"}},
+        ],
+    },
+    "notifications": {
+        "title": "Notifications Center",
+        "summary": "Manage WhatsApp, SMS, and email alerts for booking, reschedule, and follow-up events.",
+        "actions": [
+            {"label": "Consultations", "endpoint": "consult_module_page", "kwargs": {"slug": "consultations"}},
+            {"label": "Audit Logs", "endpoint": "consult_module_page", "kwargs": {"slug": "audit-logs"}},
+        ],
+    },
+    "analytics-pro": {
+        "title": "Analytics Pro",
+        "summary": "Doctor performance, no-show rate, revenue trends, and specialty demand analytics.",
+        "actions": [
+            {"label": "Reports", "endpoint": "consult_module_page", "kwargs": {"slug": "reports"}},
+            {"label": "Billing", "endpoint": "consult_module_page", "kwargs": {"slug": "billing"}},
+        ],
+    },
+    "mobile-pwa": {
+        "title": "Patient Mobile Experience",
+        "summary": "Progressive web app install mode for fast booking, updates, and notifications.",
+        "actions": [
+            {"label": "Patient Portal", "endpoint": "consult_patient_dashboard"},
+            {"label": "Consultation Home", "endpoint": "consultation_home"},
+        ],
+    },
 }
 
 
@@ -180,6 +251,305 @@ def _safe_float(value, default=0.0):
 
 def _generate_tx_ref() -> str:
     return f"PAY-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"
+
+
+def _generate_invoice_no() -> str:
+    return f"INV-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"
+
+
+def _normalize_dt(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+    return ""
+
+
+def _setting_value(setting_key: str, default: str = "") -> str:
+    row = get_db().execute(
+        "SELECT setting_value FROM consult_portal_settings WHERE setting_key=?",
+        ((setting_key or "").strip(),),
+    ).fetchone()
+    if not row:
+        return default
+    return row["setting_value"] or default
+
+
+def _slot_interval_minutes() -> int:
+    return max(15, min(120, _safe_int(_setting_value("consultation_window_minutes", "30"), 30)))
+
+
+def _doctor_has_conflict(doctor_id: int, scheduled_for: str, exclude_appointment_id: int | None = None) -> bool:
+    params = [doctor_id, _normalize_dt(scheduled_for)]
+    sql = """SELECT id FROM consult_appointments
+             WHERE doctor_id=? AND scheduled_for=?
+               AND status IN ('Requested','Confirmed','Reschedule Requested','In Progress')"""
+    if exclude_appointment_id:
+        sql += " AND id<>?"
+        params.append(exclude_appointment_id)
+    row = get_db().execute(sql, params).fetchone()
+    return bool(row)
+
+
+def _parse_available_days(raw_days: str) -> set[int]:
+    if not (raw_days or "").strip():
+        return set(range(0, 7))
+    tokens = re.split(r"[,\s/|]+", raw_days.strip().lower())
+    days = set()
+    for token in tokens:
+        if token in DAYS_LOOKUP:
+            days.add(DAYS_LOOKUP[token])
+    return days or set(range(0, 7))
+
+
+def _parse_hour_ranges(raw_hours: str) -> list[tuple[str, str]]:
+    text = (raw_hours or "").strip()
+    if not text:
+        return [("09:00", "17:00")]
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    ranges: list[tuple[str, str]] = []
+    for part in parts:
+        if "-" not in part:
+            continue
+        start, end = [x.strip() for x in part.split("-", 1)]
+        try:
+            datetime.strptime(start, "%H:%M")
+            datetime.strptime(end, "%H:%M")
+            ranges.append((start, end))
+        except Exception:
+            continue
+    return ranges or [("09:00", "17:00")]
+
+
+def _doctor_allows_datetime(doctor_row, dt_obj: datetime) -> bool:
+    conn = get_db()
+    slot_date = dt_obj.strftime("%Y-%m-%d")
+    slot_time = dt_obj.strftime("%H:%M")
+    manual = conn.execute(
+        """SELECT is_available
+           FROM consult_doctor_availability
+           WHERE doctor_id=? AND slot_date=? AND slot_time=?""",
+        (doctor_row["id"], slot_date, slot_time),
+    ).fetchone()
+    if manual:
+        return bool(manual["is_available"])
+    allowed_days = _parse_available_days(doctor_row["available_days"] or "")
+    if dt_obj.weekday() not in allowed_days:
+        return False
+    hour_ranges = _parse_hour_ranges(doctor_row["available_hours"] or "")
+    clock = dt_obj.strftime("%H:%M")
+    for start_hour, end_hour in hour_ranges:
+        if start_hour <= clock <= end_hour:
+            return True
+    return False
+
+
+def _suggest_next_slots(doctor_row, start_dt: datetime | None = None, limit: int = 6) -> list[dict]:
+    start_from = start_dt or datetime.now()
+    conn = get_db()
+    suggestions = []
+    seen = set()
+
+    manual_slots = conn.execute(
+        """SELECT slot_date, slot_time
+           FROM consult_doctor_availability
+           WHERE doctor_id=? AND is_available=1
+           ORDER BY slot_date ASC, slot_time ASC
+           LIMIT 300""",
+        (doctor_row["id"],),
+    ).fetchall()
+    for row in manual_slots:
+        dt_raw = f"{row['slot_date']} {row['slot_time']}:00"
+        normalized = _normalize_dt(dt_raw)
+        if not normalized:
+            continue
+        dt_obj = datetime.strptime(normalized, "%Y-%m-%d %H:%M:%S")
+        if dt_obj < start_from:
+            continue
+        if _doctor_has_conflict(doctor_row["id"], normalized):
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        suggestions.append({"scheduled_for": normalized, "source": "manual"})
+        if len(suggestions) >= limit:
+            return suggestions
+
+    allowed_days = _parse_available_days(doctor_row["available_days"] or "")
+    hour_ranges = _parse_hour_ranges(doctor_row["available_hours"] or "")
+    slot_minutes = _slot_interval_minutes()
+    for day_offset in range(0, 45):
+        base_day = (start_from + timedelta(days=day_offset)).date()
+        if base_day.weekday() not in allowed_days:
+            continue
+        for start_hour, end_hour in hour_ranges:
+            try:
+                start_clock = datetime.strptime(start_hour, "%H:%M").time()
+                end_clock = datetime.strptime(end_hour, "%H:%M").time()
+            except Exception:
+                continue
+            candidate = datetime.combine(base_day, start_clock)
+            day_end = datetime.combine(base_day, end_clock)
+            while candidate < day_end:
+                if candidate < start_from:
+                    candidate += timedelta(minutes=slot_minutes)
+                    continue
+                normalized = candidate.strftime("%Y-%m-%d %H:%M:%S")
+                if normalized not in seen and not _doctor_has_conflict(doctor_row["id"], normalized):
+                    seen.add(normalized)
+                    suggestions.append({"scheduled_for": normalized, "source": "availability"})
+                    if len(suggestions) >= limit:
+                        return suggestions
+                candidate += timedelta(minutes=slot_minutes)
+    return suggestions
+
+
+def _queue_notification(
+    channel: str,
+    subject: str,
+    message: str,
+    recipient_role: str,
+    recipient_id: int | None = None,
+    appointment_id: int | None = None,
+    scheduled_for: str | None = None,
+):
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO consult_notifications(
+               appointment_id, recipient_role, recipient_id, channel, subject,
+               message, status, scheduled_for, sent_at, created_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+        (
+            appointment_id,
+            (recipient_role or "patient").strip().lower(),
+            recipient_id,
+            (channel or "email").strip().lower(),
+            (subject or "").strip(),
+            (message or "").strip(),
+            "Queued",
+            _normalize_dt(scheduled_for or "") or None,
+            None,
+            _now_text(),
+        ),
+    )
+    conn.commit()
+
+
+def _queue_multi_channel_notification(
+    recipient_role: str,
+    recipient_id: int | None,
+    subject: str,
+    message: str,
+    appointment_id: int | None = None,
+):
+    for channel in ("whatsapp", "sms", "email"):
+        _queue_notification(channel, subject, message, recipient_role, recipient_id, appointment_id=appointment_id)
+
+
+def _allowed_doc(filename: str) -> bool:
+    if not filename or "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[1].lower().strip()
+    return ext in ALLOWED_DOC_EXTENSIONS
+
+
+def _ensure_upload_dir():
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def _create_video_room_for_appointment(appt_row):
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT * FROM consult_video_sessions WHERE appointment_id=?",
+        (appt_row["id"],),
+    ).fetchone()
+    if existing:
+        return existing
+    room_code = f"jhims-{(appt_row['appointment_code'] or secrets.token_hex(4)).lower().replace(' ', '-')}"
+    room_url = f"https://meet.jit.si/{room_code}"
+    token = uuid.uuid4().hex
+    conn.execute(
+        """INSERT INTO consult_video_sessions(
+               appointment_id, room_code, room_url, access_token, created_at, updated_at
+           ) VALUES(?,?,?,?,?,?)""",
+        (appt_row["id"], room_code, room_url, token, _now_text(), _now_text()),
+    )
+    conn.commit()
+    return conn.execute(
+        "SELECT * FROM consult_video_sessions WHERE appointment_id=?",
+        (appt_row["id"],),
+    ).fetchone()
+
+
+def _create_invoice_for_appointment(appt_id: int):
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM consult_invoices WHERE appointment_id=?", (appt_id,)).fetchone()
+    if existing:
+        return
+    appt = conn.execute(
+        """SELECT a.id, a.patient_id, a.scheduled_for, d.consultation_fee
+           FROM consult_appointments a
+           JOIN consult_doctors d ON d.id=a.doctor_id
+           WHERE a.id=?""",
+        (appt_id,),
+    ).fetchone()
+    if not appt:
+        return
+    base_amount = max(_safe_float(appt["consultation_fee"], 0.0), 0.0)
+    tax_amount = round(base_amount * 0.0, 2)
+    total_amount = round(base_amount + tax_amount, 2)
+    due_date = (appt["scheduled_for"] or "").split(" ")[0] if appt["scheduled_for"] else _date_text()
+    conn.execute(
+        """INSERT INTO consult_invoices(
+               invoice_no, appointment_id, patient_id, amount, tax_amount, total_amount,
+               status, due_date, issued_at, paid_at, created_at, updated_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            _generate_invoice_no(),
+            appt["id"],
+            appt["patient_id"],
+            base_amount,
+            tax_amount,
+            total_amount,
+            "Pending",
+            due_date,
+            _now_text(),
+            None,
+            _now_text(),
+            _now_text(),
+        ),
+    )
+    conn.commit()
+
+
+def _refresh_invoice_status_for_appointment(appt_id: int):
+    conn = get_db()
+    invoice = conn.execute("SELECT * FROM consult_invoices WHERE appointment_id=?", (appt_id,)).fetchone()
+    if not invoice:
+        return
+    paid_total = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) AS total FROM consult_payments WHERE appointment_id=? AND lower(status)='paid'",
+        (appt_id,),
+    ).fetchone()["total"]
+    due_total = _safe_float(invoice["total_amount"], 0.0)
+    if paid_total >= due_total and due_total > 0:
+        status = "Paid"
+        paid_at = _now_text()
+    elif paid_total > 0:
+        status = "Partially Paid"
+        paid_at = None
+    else:
+        status = "Pending"
+        paid_at = None
+    conn.execute(
+        "UPDATE consult_invoices SET status=?, paid_at=?, updated_at=? WHERE id=?",
+        (status, paid_at, _now_text(), invoice["id"]),
+    )
+    conn.commit()
 
 
 def _upsert_setting(setting_key: str, setting_value: str):
@@ -388,6 +758,144 @@ def init_db():
             created_at TEXT NOT NULL
         )"""
     )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_video_sessions(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER NOT NULL UNIQUE,
+            room_code TEXT NOT NULL,
+            room_url TEXT NOT NULL,
+            access_token TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_appointment_notes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER NOT NULL,
+            author_role TEXT NOT NULL,
+            author_id INTEGER,
+            visibility TEXT NOT NULL DEFAULT 'private',
+            note TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_doctor_availability(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doctor_id INTEGER NOT NULL,
+            slot_date TEXT NOT NULL,
+            slot_time TEXT NOT NULL,
+            is_available INTEGER NOT NULL DEFAULT 1,
+            source TEXT NOT NULL DEFAULT 'manual',
+            created_at TEXT NOT NULL,
+            UNIQUE(doctor_id, slot_date, slot_time),
+            FOREIGN KEY(doctor_id) REFERENCES consult_doctors(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_departments(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_doctor_departments(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doctor_id INTEGER NOT NULL,
+            department_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(doctor_id, department_id),
+            FOREIGN KEY(doctor_id) REFERENCES consult_doctors(id),
+            FOREIGN KEY(department_id) REFERENCES consult_departments(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_module_permissions(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role_name TEXT NOT NULL,
+            module_slug TEXT NOT NULL,
+            can_view INTEGER NOT NULL DEFAULT 1,
+            can_edit INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            UNIQUE(role_name, module_slug)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_notifications(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER,
+            recipient_role TEXT NOT NULL,
+            recipient_id INTEGER,
+            channel TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            message TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Queued',
+            scheduled_for TEXT,
+            sent_at TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_invoices(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_no TEXT NOT NULL UNIQUE,
+            appointment_id INTEGER NOT NULL UNIQUE,
+            patient_id INTEGER NOT NULL,
+            amount REAL NOT NULL DEFAULT 0,
+            tax_amount REAL NOT NULL DEFAULT 0,
+            total_amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'Pending',
+            due_date TEXT,
+            issued_at TEXT,
+            paid_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id),
+            FOREIGN KEY(patient_id) REFERENCES consult_patients(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_prescription_refills(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER NOT NULL,
+            patient_id INTEGER NOT NULL,
+            doctor_id INTEGER,
+            medication_summary TEXT NOT NULL,
+            request_note TEXT,
+            refill_status TEXT NOT NULL DEFAULT 'Requested',
+            requested_at TEXT NOT NULL,
+            resolved_at TEXT,
+            FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id),
+            FOREIGN KEY(patient_id) REFERENCES consult_patients(id),
+            FOREIGN KEY(doctor_id) REFERENCES consult_doctors(id)
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS consult_documents(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER,
+            patient_id INTEGER NOT NULL,
+            doctor_id INTEGER,
+            category TEXT NOT NULL DEFAULT 'General',
+            original_name TEXT NOT NULL,
+            stored_name TEXT NOT NULL,
+            mime_type TEXT,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            uploaded_by_role TEXT NOT NULL,
+            uploaded_by_id INTEGER,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(appointment_id) REFERENCES consult_appointments(id),
+            FOREIGN KEY(patient_id) REFERENCES consult_patients(id),
+            FOREIGN KEY(doctor_id) REFERENCES consult_doctors(id)
+        )"""
+    )
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_appt_patient ON consult_appointments(patient_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_appt_doctor ON consult_appointments(doctor_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_appt_status ON consult_appointments(status)")
@@ -397,12 +905,24 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_pay_patient ON consult_payments(patient_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_pay_appt ON consult_payments(appointment_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_consult_log_created ON consult_audit_logs(created_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_video_appt ON consult_video_sessions(appointment_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_note_appt ON consult_appointment_notes(appointment_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_avail_doctor_date ON consult_doctor_availability(doctor_id, slot_date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_notify_created ON consult_notifications(created_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_notify_status ON consult_notifications(status)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_invoice_patient ON consult_invoices(patient_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_refill_appt ON consult_prescription_refills(appointment_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_doc_patient ON consult_documents(patient_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_consult_doc_appt ON consult_documents(appointment_id)")
 
     defaults = [
         ("portal_name", "JHIMS Consultation"),
         ("support_phone", "050 805 0007"),
         ("support_email", "jacksmeg99@gmail.com"),
         ("consultation_window_minutes", "30"),
+        ("default_currency", "GHS"),
+        ("default_video_provider", "Jitsi"),
+        ("billing_tax_rate", "0"),
     ]
     for key, value in defaults:
         c.execute(
@@ -411,6 +931,27 @@ def init_db():
                ON CONFLICT(setting_key) DO NOTHING""",
             (key, value, _now_text()),
         )
+    for specialty in DOCTOR_SPECIALTIES:
+        c.execute(
+            """INSERT INTO consult_departments(name, description, is_active, created_at)
+               VALUES(?,?,1,?)
+               ON CONFLICT(name) DO NOTHING""",
+            (specialty, f"{specialty} consultation unit", _now_text()),
+        )
+    default_modules = list(MODULE_PAGES.keys())
+    for role_name in ("patient", "doctor", "admin"):
+        for module_slug in default_modules:
+            can_edit = 1 if role_name in ("doctor", "admin") else 0
+            can_view = 1
+            if role_name == "patient" and module_slug in ("users-roles", "departments", "settings", "audit-logs", "admin-control"):
+                can_view = 0
+            c.execute(
+                """INSERT INTO consult_module_permissions(role_name, module_slug, can_view, can_edit, updated_at)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(role_name, module_slug) DO NOTHING""",
+                (role_name, module_slug, can_view, can_edit, _now_text()),
+            )
+    _ensure_upload_dir()
     conn.commit()
 
 
@@ -448,6 +989,27 @@ def doctor_required(fn):
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+def _current_role_name() -> str:
+    if session.get("consult_doctor_id"):
+        return "doctor"
+    if session.get("consult_patient_id"):
+        return "patient"
+    return "guest"
+
+
+def _can_access_module(module_slug: str, need_edit: bool = False) -> bool:
+    role_name = _current_role_name()
+    if role_name == "guest":
+        return False
+    row = get_db().execute(
+        "SELECT can_view, can_edit FROM consult_module_permissions WHERE role_name=? AND module_slug=?",
+        (role_name, (module_slug or "").strip().lower()),
+    ).fetchone()
+    if not row:
+        return role_name == "doctor"
+    return bool(row["can_edit"]) if need_edit else bool(row["can_view"])
 
 
 def _render(template_name: str, **context):
@@ -503,7 +1065,7 @@ def consultation_home():
         "SELECT COUNT(*) AS c FROM consult_appointments WHERE status='Completed'"
     ).fetchone()["c"]
     upcoming_consults = conn.execute(
-        "SELECT COUNT(*) AS c FROM consult_appointments WHERE status IN ('Requested','Confirmed','Reschedule Requested')"
+        "SELECT COUNT(*) AS c FROM consult_appointments WHERE status IN ('Requested','Confirmed','Reschedule Requested','In Progress')"
     ).fetchone()["c"]
 
     upcoming_rows = conn.execute(
@@ -512,7 +1074,7 @@ def consultation_home():
            FROM consult_appointments a
            JOIN consult_patients p ON p.id=a.patient_id
            JOIN consult_doctors d ON d.id=a.doctor_id
-           WHERE a.status IN ('Requested','Confirmed','Reschedule Requested')
+           WHERE a.status IN ('Requested','Confirmed','Reschedule Requested','In Progress')
            ORDER BY a.scheduled_for ASC, a.id ASC
            LIMIT 5"""
     ).fetchall()
@@ -521,7 +1083,7 @@ def consultation_home():
         """SELECT a.id, a.scheduled_for, a.status, p.full_name AS patient_name
            FROM consult_appointments a
            JOIN consult_patients p ON p.id=a.patient_id
-           WHERE a.status IN ('Confirmed','Reschedule Requested')
+           WHERE a.status IN ('Confirmed','Reschedule Requested','In Progress')
            ORDER BY a.scheduled_for ASC, a.id ASC
            LIMIT 5"""
     ).fetchall()
@@ -541,7 +1103,7 @@ def consultation_home():
         "SELECT updated_at, created_at FROM consult_appointments WHERE status='Confirmed' ORDER BY id DESC LIMIT 1"
     ).fetchone()
     recent_in_progress = conn.execute(
-        "SELECT updated_at, created_at FROM consult_appointments WHERE status='Reschedule Requested' ORDER BY id DESC LIMIT 1"
+        "SELECT updated_at, created_at FROM consult_appointments WHERE status='In Progress' ORDER BY id DESC LIMIT 1"
     ).fetchone()
     recent_completed = conn.execute(
         "SELECT updated_at, created_at FROM consult_appointments WHERE status='Completed' ORDER BY id DESC LIMIT 1"
@@ -597,7 +1159,7 @@ def consultation_healthz():
 def _module_dataset(slug: str, patient, doctor):
     conn = get_db()
     slug = (slug or "").strip().lower()
-    data = {"slug": slug}
+    data = {"slug": slug, "role_name": _current_role_name()}
 
     if slug == "medical-records":
         where = ["a.status='Completed'"]
@@ -629,9 +1191,12 @@ def _module_dataset(slug: str, patient, doctor):
         if patient:
             where.append("a.patient_id=?")
             params.append(patient["id"])
+        if doctor:
+            where.append("a.doctor_id=?")
+            params.append(doctor["id"])
         rows = conn.execute(
-            f"""SELECT a.appointment_code, a.scheduled_for, a.prescription, a.diagnosis, a.follow_up_date,
-                       p.full_name AS patient_name, d.full_name AS doctor_name
+            f"""SELECT a.id, a.appointment_code, a.scheduled_for, a.prescription, a.diagnosis, a.follow_up_date,
+                       p.full_name AS patient_name, d.full_name AS doctor_name, p.id AS patient_id, d.id AS doctor_id
                 FROM consult_appointments a
                 JOIN consult_patients p ON p.id=a.patient_id
                 JOIN consult_doctors d ON d.id=a.doctor_id
@@ -640,11 +1205,34 @@ def _module_dataset(slug: str, patient, doctor):
                 LIMIT 120""",
             params,
         ).fetchall()
+        refill_where = ["1=1"]
+        refill_params = []
+        if patient:
+            refill_where.append("r.patient_id=?")
+            refill_params.append(patient["id"])
+        elif doctor:
+            refill_where.append("r.doctor_id=?")
+            refill_params.append(doctor["id"])
+        refills = conn.execute(
+            f"""SELECT r.*, a.appointment_code, p.full_name AS patient_name, d.full_name AS doctor_name
+                FROM consult_prescription_refills r
+                JOIN consult_appointments a ON a.id=r.appointment_id
+                JOIN consult_patients p ON p.id=r.patient_id
+                LEFT JOIN consult_doctors d ON d.id=r.doctor_id
+                WHERE {' AND '.join(refill_where)}
+                ORDER BY r.requested_at DESC, r.id DESC
+                LIMIT 200""",
+            refill_params,
+        ).fetchall()
         data["prescriptions"] = rows
+        data["refills"] = refills
         data["kpis"] = {
             "total_prescriptions": len(rows),
             "with_follow_up": len([r for r in rows if (r["follow_up_date"] or "").strip()]),
+            "refill_requests": len(refills),
         }
+        data["can_request_refill"] = bool(patient)
+        data["can_resolve_refill"] = bool(doctor)
 
     elif slug == "lab-results":
         where = ["1=1"]
@@ -665,6 +1253,25 @@ def _module_dataset(slug: str, patient, doctor):
                 LIMIT 120""",
             params,
         ).fetchall()
+        doc_where = ["1=1"]
+        doc_params = []
+        if patient:
+            doc_where.append("doc.patient_id=?")
+            doc_params.append(patient["id"])
+        elif doctor:
+            doc_where.append("(doc.doctor_id=? OR doc.patient_id IN (SELECT patient_id FROM consult_appointments WHERE doctor_id=?))")
+            doc_params.extend([doctor["id"], doctor["id"]])
+        documents = conn.execute(
+            f"""SELECT doc.*, p.full_name AS patient_name, d.full_name AS doctor_name, a.appointment_code
+                FROM consult_documents doc
+                JOIN consult_patients p ON p.id=doc.patient_id
+                LEFT JOIN consult_doctors d ON d.id=doc.doctor_id
+                LEFT JOIN consult_appointments a ON a.id=doc.appointment_id
+                WHERE {' AND '.join(doc_where)}
+                ORDER BY doc.created_at DESC, doc.id DESC
+                LIMIT 160""",
+            doc_params,
+        ).fetchall()
         if doctor:
             patient_options = conn.execute(
                 """SELECT DISTINCT p.id, p.full_name
@@ -682,9 +1289,30 @@ def _module_dataset(slug: str, patient, doctor):
         doctor_options = conn.execute(
             "SELECT id, full_name, specialty FROM consult_doctors WHERE status='active' ORDER BY full_name ASC LIMIT 200"
         ).fetchall()
+        appointment_options = []
+        if patient:
+            appointment_options = conn.execute(
+                """SELECT id, appointment_code, scheduled_for
+                   FROM consult_appointments
+                   WHERE patient_id=?
+                   ORDER BY scheduled_for DESC, id DESC
+                   LIMIT 120""",
+                (patient["id"],),
+            ).fetchall()
+        elif doctor:
+            appointment_options = conn.execute(
+                """SELECT id, appointment_code, scheduled_for
+                   FROM consult_appointments
+                   WHERE doctor_id=?
+                   ORDER BY scheduled_for DESC, id DESC
+                   LIMIT 120""",
+                (doctor["id"],),
+            ).fetchall()
         data["lab_rows"] = rows
+        data["documents"] = documents
         data["patient_options"] = patient_options
         data["doctor_options"] = doctor_options
+        data["appointment_options"] = appointment_options
         data["can_add"] = bool(patient or doctor)
 
     elif slug in ("payments", "billing"):
@@ -701,7 +1329,7 @@ def _module_dataset(slug: str, patient, doctor):
                 LEFT JOIN consult_doctors d ON d.id=a.doctor_id
                 WHERE {' AND '.join(pay_where)}
                 ORDER BY pay.created_at DESC, pay.id DESC
-                LIMIT 200""",
+                LIMIT 260""",
             pay_params,
         ).fetchall()
         total_paid = sum([_safe_float(r["amount"], 0.0) for r in rows if (r["status"] or "").lower() == "paid"])
@@ -715,16 +1343,48 @@ def _module_dataset(slug: str, patient, doctor):
                 """SELECT a.id, a.appointment_code, a.reason, a.scheduled_for, d.full_name AS doctor_name, d.consultation_fee
                    FROM consult_appointments a
                    JOIN consult_doctors d ON d.id=a.doctor_id
-                   WHERE a.patient_id=? AND a.status IN ('Requested','Confirmed','Reschedule Requested','Completed')
+                   WHERE a.patient_id=? AND a.status IN ('Requested','Confirmed','Reschedule Requested','Completed','In Progress')
                    ORDER BY a.scheduled_for DESC, a.id DESC
                    LIMIT 120""",
                 (patient["id"],),
             ).fetchall()
         else:
-            due_appointments = []
+            due_appointments = conn.execute(
+                """SELECT a.id, a.appointment_code, a.reason, a.scheduled_for, p.full_name AS patient_name, d.full_name AS doctor_name, d.consultation_fee
+                   FROM consult_appointments a
+                   JOIN consult_patients p ON p.id=a.patient_id
+                   JOIN consult_doctors d ON d.id=a.doctor_id
+                   ORDER BY a.scheduled_for DESC, a.id DESC
+                   LIMIT 120"""
+            ).fetchall()
+        for appt in due_appointments:
+            _create_invoice_for_appointment(appt["id"])
+            _refresh_invoice_status_for_appointment(appt["id"])
+        inv_where = ["1=1"]
+        inv_params = []
+        if patient:
+            inv_where.append("inv.patient_id=?")
+            inv_params.append(patient["id"])
+        invoices = conn.execute(
+            f"""SELECT inv.*, p.full_name AS patient_name, a.appointment_code, d.full_name AS doctor_name,
+                       COALESCE((SELECT SUM(amount) FROM consult_payments pay WHERE pay.appointment_id=inv.appointment_id AND lower(pay.status)='paid'),0) AS paid_amount
+                FROM consult_invoices inv
+                JOIN consult_patients p ON p.id=inv.patient_id
+                JOIN consult_appointments a ON a.id=inv.appointment_id
+                JOIN consult_doctors d ON d.id=a.doctor_id
+                WHERE {' AND '.join(inv_where)}
+                ORDER BY inv.created_at DESC, inv.id DESC
+                LIMIT 260""",
+            inv_params,
+        ).fetchall()
+        outstanding_total = 0.0
+        for inv in invoices:
+            outstanding_total += max(_safe_float(inv["total_amount"], 0.0) - _safe_float(inv["paid_amount"], 0.0), 0.0)
 
         data["payments"] = rows
+        data["invoices"] = invoices
         data["total_paid"] = total_paid
+        data["outstanding_total"] = outstanding_total
         data["method_totals"] = sorted(by_method.items(), key=lambda x: x[0].lower())
         data["due_appointments"] = due_appointments
         data["can_pay"] = bool(patient)
@@ -770,9 +1430,12 @@ def _module_dataset(slug: str, patient, doctor):
                 JOIN consult_doctors d ON d.id=a.doctor_id
                 WHERE {' AND '.join(where)}
                 ORDER BY a.scheduled_for DESC, a.id DESC
-                LIMIT 300""",
+                LIMIT 320""",
             params,
         ).fetchall()
+        for row in rows[:40]:
+            _create_invoice_for_appointment(row["id"])
+            _refresh_invoice_status_for_appointment(row["id"])
         status_counts = conn.execute(
             """SELECT status, COUNT(*) AS c
                FROM consult_appointments
@@ -820,16 +1483,39 @@ def _module_dataset(slug: str, patient, doctor):
             {"role": "Doctor", "permissions": "Manage consultations, update notes, manage schedule"},
             {"role": "Admin", "permissions": "Configure modules, monitor billing, audit system logs"},
         ]
+        data["doctors"] = conn.execute(
+            """SELECT id, full_name, specialty, status, verification_status, consultation_fee, created_at
+               FROM consult_doctors
+               ORDER BY created_at DESC, id DESC
+               LIMIT 200"""
+        ).fetchall()
+        data["permissions"] = conn.execute(
+            """SELECT role_name, module_slug, can_view, can_edit, updated_at
+               FROM consult_module_permissions
+               ORDER BY role_name ASC, module_slug ASC"""
+        ).fetchall()
+        data["can_manage"] = bool(doctor)
 
     elif slug == "departments":
         rows = conn.execute(
-            """SELECT specialty AS department, COUNT(*) AS doctors
-               FROM consult_doctors
-               WHERE status='active'
-               GROUP BY specialty
-               ORDER BY doctors DESC, department ASC"""
+            """SELECT dep.id, dep.name AS department, dep.description, dep.is_active,
+                      COUNT(dd.id) AS doctors
+               FROM consult_departments dep
+               LEFT JOIN consult_doctor_departments dd ON dd.department_id=dep.id
+               GROUP BY dep.id, dep.name, dep.description, dep.is_active
+               ORDER BY dep.name ASC"""
         ).fetchall()
         data["departments"] = rows
+        data["doctor_department_rows"] = conn.execute(
+            """SELECT d.id, d.full_name, d.specialty,
+                      GROUP_CONCAT(dep.name, ', ') AS department_names
+               FROM consult_doctors d
+               LEFT JOIN consult_doctor_departments dd ON dd.doctor_id=d.id
+               LEFT JOIN consult_departments dep ON dep.id=dd.department_id
+               GROUP BY d.id, d.full_name, d.specialty
+               ORDER BY d.full_name ASC"""
+        ).fetchall()
+        data["can_manage"] = bool(doctor)
 
     elif slug == "settings":
         rows = conn.execute(
@@ -853,6 +1539,175 @@ def _module_dataset(slug: str, patient, doctor):
         ).fetchall()
         data["logs"] = rows
 
+    elif slug == "video-room":
+        where = ["1=1"]
+        params = []
+        if doctor:
+            where.append("a.doctor_id=?")
+            params.append(doctor["id"])
+        elif patient:
+            where.append("a.patient_id=?")
+            params.append(patient["id"])
+        rows = conn.execute(
+            f"""SELECT a.id, a.appointment_code, a.scheduled_for, a.status, a.visit_mode,
+                       p.full_name AS patient_name, d.full_name AS doctor_name, d.specialty
+                FROM consult_appointments a
+                JOIN consult_patients p ON p.id=a.patient_id
+                JOIN consult_doctors d ON d.id=a.doctor_id
+                WHERE {' AND '.join(where)} AND a.status IN ('Requested','Confirmed','Reschedule Requested','In Progress','Completed')
+                ORDER BY a.scheduled_for DESC, a.id DESC
+                LIMIT 140""",
+            params,
+        ).fetchall()
+        data["appointments"] = rows
+        data["room_ready_count"] = len([r for r in rows if r["status"] in ("Confirmed", "Reschedule Requested", "In Progress", "Completed")])
+
+    elif slug == "availability":
+        data["slot_minutes"] = _slot_interval_minutes()
+        if doctor:
+            slots = conn.execute(
+                """SELECT * FROM consult_doctor_availability
+                   WHERE doctor_id=? AND is_available=1
+                   ORDER BY slot_date ASC, slot_time ASC
+                   LIMIT 300""",
+                (doctor["id"],),
+            ).fetchall()
+            data["doctor_slots"] = slots
+            data["suggested_slots"] = _suggest_next_slots(doctor, datetime.now(), limit=8)
+            data["can_manage"] = True
+        else:
+            selected_doctor_id = _safe_int(request.args.get("doctor_id", "0"), 0)
+            doctors = conn.execute(
+                "SELECT id, full_name, specialty, available_days, available_hours FROM consult_doctors WHERE status='active' ORDER BY full_name ASC"
+            ).fetchall()
+            selected_doctor = None
+            if selected_doctor_id:
+                selected_doctor = conn.execute(
+                    "SELECT id, full_name, specialty, available_days, available_hours FROM consult_doctors WHERE id=? AND status='active'",
+                    (selected_doctor_id,),
+                ).fetchone()
+            data["doctors"] = doctors
+            data["selected_doctor_id"] = selected_doctor_id
+            data["selected_doctor"] = selected_doctor
+            data["suggested_slots"] = _suggest_next_slots(selected_doctor, datetime.now(), limit=8) if selected_doctor else []
+            data["can_manage"] = False
+
+    elif slug == "admin-control":
+        data["can_manage"] = bool(doctor)
+        data["doctors"] = conn.execute(
+            """SELECT id, full_name, specialty, status, verification_status, consultation_fee, created_at
+               FROM consult_doctors
+               ORDER BY created_at DESC, id DESC
+               LIMIT 240"""
+        ).fetchall()
+        data["departments"] = conn.execute(
+            "SELECT id, name, description, is_active FROM consult_departments ORDER BY name ASC"
+        ).fetchall()
+        data["permissions"] = conn.execute(
+            """SELECT role_name, module_slug, can_view, can_edit, updated_at
+               FROM consult_module_permissions
+               ORDER BY role_name ASC, module_slug ASC"""
+        ).fetchall()
+        data["pricing"] = conn.execute(
+            """SELECT setting_key, setting_value, updated_at
+               FROM consult_portal_settings
+               WHERE setting_key LIKE 'price_%' OR setting_key='default_currency'
+               ORDER BY setting_key ASC"""
+        ).fetchall()
+
+    elif slug == "notifications":
+        where = ["1=1"]
+        params = []
+        if patient:
+            where.append("n.recipient_role='patient' AND n.recipient_id=?")
+            params.append(patient["id"])
+        elif doctor:
+            where.append("(n.recipient_role='doctor' AND n.recipient_id=?) OR n.recipient_role='system'")
+            params.append(doctor["id"])
+        rows = conn.execute(
+            f"""SELECT n.*, a.appointment_code
+                FROM consult_notifications n
+                LEFT JOIN consult_appointments a ON a.id=n.appointment_id
+                WHERE {' AND '.join(where)}
+                ORDER BY n.created_at DESC, n.id DESC
+                LIMIT 260""",
+            params,
+        ).fetchall()
+        data["notifications"] = rows
+        data["stats"] = conn.execute(
+            "SELECT channel, status, COUNT(*) AS c FROM consult_notifications GROUP BY channel, status ORDER BY channel ASC, status ASC"
+        ).fetchall()
+        data["can_manage"] = bool(doctor)
+
+    elif slug == "analytics-pro":
+        totals = conn.execute(
+            """SELECT COUNT(*) AS total,
+                      SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) AS completed,
+                      SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) AS cancelled
+               FROM consult_appointments"""
+        ).fetchone()
+        total_appointments = _safe_int(totals["total"], 0)
+        cancelled = _safe_int(totals["cancelled"], 0)
+        no_show_rate = (cancelled / total_appointments * 100) if total_appointments else 0.0
+        doctor_performance = conn.execute(
+            """SELECT d.full_name, d.specialty,
+                      COUNT(a.id) AS total_consults,
+                      SUM(CASE WHEN a.status='Completed' THEN 1 ELSE 0 END) AS completed_consults,
+                      ROUND(CASE WHEN COUNT(a.id)=0 THEN 0 ELSE (SUM(CASE WHEN a.status='Completed' THEN 1 ELSE 0 END)*100.0/COUNT(a.id)) END, 2) AS completion_rate
+               FROM consult_doctors d
+               LEFT JOIN consult_appointments a ON a.doctor_id=d.id
+               GROUP BY d.id, d.full_name, d.specialty
+               ORDER BY total_consults DESC, d.full_name ASC
+               LIMIT 80"""
+        ).fetchall()
+        revenue_trends = conn.execute(
+            """SELECT substr(created_at,1,10) AS day, ROUND(SUM(amount),2) AS revenue
+               FROM consult_payments
+               WHERE lower(status)='paid'
+               GROUP BY day
+               ORDER BY day DESC
+               LIMIT 30"""
+        ).fetchall()
+        revenue_trends = list(reversed(revenue_trends))
+        specialty_demand = conn.execute(
+            """SELECT d.specialty, COUNT(a.id) AS demand
+               FROM consult_appointments a
+               JOIN consult_doctors d ON d.id=a.doctor_id
+               GROUP BY d.specialty
+               ORDER BY demand DESC, d.specialty ASC"""
+        ).fetchall()
+        total_revenue = _safe_float(
+            conn.execute("SELECT COALESCE(SUM(amount),0) AS total FROM consult_payments WHERE lower(status)='paid'").fetchone()["total"],
+            0.0,
+        )
+        data["kpis"] = {
+            "total_appointments": total_appointments,
+            "completed": _safe_int(totals["completed"], 0),
+            "no_show_rate": round(no_show_rate, 2),
+            "total_revenue": round(total_revenue, 2),
+        }
+        data["doctor_performance"] = doctor_performance
+        data["revenue_trends"] = revenue_trends
+        data["specialty_demand"] = specialty_demand
+
+    elif slug == "mobile-pwa":
+        data["install_ready"] = True
+        data["manifest_url"] = url_for("consultation_manifest")
+        data["service_worker_url"] = url_for("consultation_service_worker")
+        data["quick_links"] = [
+            {
+                "label": "Book Appointment",
+                "url": url_for("consult_doctor_directory")
+                if patient
+                else url_for("consult_patient_login", next=url_for("consult_doctor_directory")),
+            },
+            {
+                "label": "My Dashboard",
+                "url": url_for("consult_patient_dashboard") if patient else url_for("consult_patient_login"),
+            },
+            {"label": "Notifications", "url": url_for("consult_module_page", slug="notifications")},
+        ]
+
     return data
 
 
@@ -865,6 +1720,12 @@ def consult_module_page(slug):
     module_slug = (slug or "").strip().lower()
     patient = current_patient()
     doctor = current_doctor()
+    if not (patient or doctor):
+        flash("Please log in to access consultation modules.", "warning")
+        return redirect(url_for("consult_patient_login", next=url_for("consult_module_page", slug=module_slug)))
+    if not _can_access_module(module_slug):
+        flash("You do not have permission to access this module.", "danger")
+        return redirect(url_for("consultation_home"))
 
     if request.method == "POST":
         action = (request.form.get("action", "") or "").strip().lower()
@@ -909,6 +1770,117 @@ def consult_module_page(slug):
                 _audit_log("lab_result_added", target=f"patient:{valid_patient['id']}", details=report_type)
                 flash("Lab result entry added successfully.", "success")
 
+        elif module_slug == "lab-results" and action == "add_document":
+            if not (patient or doctor):
+                flash("Please log in first to upload document.", "warning")
+                return redirect(url_for("consult_patient_login", next=url_for("consult_module_page", slug=module_slug)))
+            file_obj = request.files.get("document_file")
+            category = (request.form.get("category", "") or "General").strip() or "General"
+            appointment_id = _safe_int(request.form.get("appointment_id", "0"), 0)
+            if not file_obj or not (file_obj.filename or "").strip():
+                flash("Please choose a file to upload.", "danger")
+            elif not _allowed_doc(file_obj.filename):
+                flash("Unsupported file type. Allowed: pdf, png, jpg, jpeg, webp, txt, doc, docx.", "danger")
+            else:
+                if patient:
+                    patient_id = patient["id"]
+                    doctor_id = _safe_int(request.form.get("doctor_id", "0"), 0)
+                else:
+                    patient_id = _safe_int(request.form.get("patient_id", "0"), 0)
+                    doctor_id = doctor["id"]
+                valid_patient = conn.execute("SELECT id FROM consult_patients WHERE id=?", (patient_id,)).fetchone()
+                valid_doctor = conn.execute("SELECT id FROM consult_doctors WHERE id=?", (doctor_id,)).fetchone() if doctor_id else None
+                if not valid_patient:
+                    flash("Valid patient is required for document upload.", "danger")
+                else:
+                    _ensure_upload_dir()
+                    original_name = secure_filename(file_obj.filename)
+                    unique_name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:10]}-{original_name}"
+                    file_path = os.path.join(UPLOAD_DIR, unique_name)
+                    file_obj.save(file_path)
+                    file_size = os.path.getsize(file_path)
+                    conn.execute(
+                        """INSERT INTO consult_documents(
+                               appointment_id, patient_id, doctor_id, category, original_name, stored_name,
+                               mime_type, file_size, uploaded_by_role, uploaded_by_id, created_at
+                           ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            appointment_id if appointment_id else None,
+                            valid_patient["id"],
+                            valid_doctor["id"] if valid_doctor else None,
+                            category,
+                            original_name,
+                            unique_name,
+                            (file_obj.mimetype or "").strip(),
+                            file_size,
+                            "doctor" if doctor else "patient",
+                            doctor["id"] if doctor else patient["id"],
+                            _now_text(),
+                        ),
+                    )
+                    conn.commit()
+                    _audit_log("document_uploaded", target=f"doc:{unique_name}", details=f"patient_id={valid_patient['id']}")
+                    flash("Document uploaded successfully.", "success")
+
+        elif module_slug == "e-prescriptions" and action == "request_refill":
+            if not patient:
+                flash("Patient login is required to request refill.", "warning")
+                return redirect(url_for("consult_patient_login", next=url_for("consult_module_page", slug=module_slug)))
+            appointment_id = _safe_int(request.form.get("appointment_id", "0"), 0)
+            medication_summary = (request.form.get("medication_summary", "") or "").strip()
+            request_note = (request.form.get("request_note", "") or "").strip()
+            appt = conn.execute(
+                "SELECT id, doctor_id FROM consult_appointments WHERE id=? AND patient_id=?",
+                (appointment_id, patient["id"]),
+            ).fetchone()
+            if not appt or not medication_summary:
+                flash("Appointment and medication summary are required for refill request.", "danger")
+            else:
+                conn.execute(
+                    """INSERT INTO consult_prescription_refills(
+                           appointment_id, patient_id, doctor_id, medication_summary, request_note, refill_status, requested_at
+                       ) VALUES(?,?,?,?,?,?,?)""",
+                    (appt["id"], patient["id"], appt["doctor_id"], medication_summary, request_note, "Requested", _now_text()),
+                )
+                conn.commit()
+                _queue_multi_channel_notification(
+                    "doctor",
+                    appt["doctor_id"],
+                    "New refill request",
+                    f"Patient requested refill for appointment #{appointment_id}.",
+                    appointment_id=appt["id"],
+                )
+                _audit_log("refill_requested", target=f"appointment:{appointment_id}", details=medication_summary)
+                flash("Refill request submitted.", "success")
+
+        elif module_slug == "e-prescriptions" and action == "resolve_refill":
+            if not doctor:
+                flash("Doctor login is required to resolve refill requests.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            refill_id = _safe_int(request.form.get("refill_id", "0"), 0)
+            refill_status = (request.form.get("refill_status", "") or "").strip() or "Approved"
+            row = conn.execute(
+                "SELECT id, patient_id, appointment_id FROM consult_prescription_refills WHERE id=? AND doctor_id=?",
+                (refill_id, doctor["id"]),
+            ).fetchone()
+            if not row:
+                flash("Refill request not found for this doctor.", "danger")
+            else:
+                conn.execute(
+                    "UPDATE consult_prescription_refills SET refill_status=?, resolved_at=? WHERE id=?",
+                    (refill_status, _now_text(), row["id"]),
+                )
+                conn.commit()
+                _queue_multi_channel_notification(
+                    "patient",
+                    row["patient_id"],
+                    "Refill request updated",
+                    f"Your refill request status is now: {refill_status}.",
+                    appointment_id=row["appointment_id"],
+                )
+                _audit_log("refill_resolved", target=f"refill:{row['id']}", details=refill_status)
+                flash("Refill request updated.", "success")
+
         elif module_slug in ("payments", "billing") and action == "add_payment":
             if not patient:
                 flash("Patient login is required to create a payment entry.", "warning")
@@ -939,6 +1911,15 @@ def consult_module_page(slug):
                     (appointment_id, patient["id"], amount, "GHS", method, "Paid", tx_ref, notes, _now_text()),
                 )
                 conn.commit()
+                if appointment_id:
+                    _refresh_invoice_status_for_appointment(appointment_id)
+                _queue_multi_channel_notification(
+                    "patient",
+                    patient["id"],
+                    "Payment received",
+                    f"Payment {tx_ref} for GHS {amount:.2f} was recorded successfully.",
+                    appointment_id=appointment_id,
+                )
                 _audit_log("payment_recorded", target=f"tx:{tx_ref}", details=f"amount={amount}")
                 flash("Payment recorded successfully.", "success")
 
@@ -955,10 +1936,285 @@ def consult_module_page(slug):
                 _audit_log("setting_updated", target=setting_key, details=setting_value, actor_role="doctor", actor_id=doctor["id"])
                 flash("Setting updated successfully.", "success")
 
+        elif module_slug == "availability" and action == "add_slot":
+            if not doctor:
+                flash("Doctor login is required to manage availability slots.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            slot_date = (request.form.get("slot_date", "") or "").strip()
+            slot_time = (request.form.get("slot_time", "") or "").strip()
+            if not slot_date or not slot_time:
+                flash("Date and time are required for slot creation.", "danger")
+            else:
+                try:
+                    datetime.strptime(f"{slot_date} {slot_time}:00", "%Y-%m-%d %H:%M:%S")
+                    conn.execute(
+                        """INSERT INTO consult_doctor_availability(doctor_id, slot_date, slot_time, is_available, source, created_at)
+                           VALUES(?,?,?,1,'manual',?)
+                           ON CONFLICT(doctor_id, slot_date, slot_time) DO UPDATE SET is_available=1, source='manual'""",
+                        (doctor["id"], slot_date, slot_time, _now_text()),
+                    )
+                    conn.commit()
+                    _audit_log("doctor_slot_added", target=f"doctor:{doctor['id']}", details=f"{slot_date} {slot_time}", actor_role="doctor", actor_id=doctor["id"])
+                    flash("Availability slot added.", "success")
+                except Exception:
+                    flash("Invalid slot date/time.", "danger")
+
+        elif module_slug == "availability" and action == "remove_slot":
+            if not doctor:
+                flash("Doctor login is required to manage availability slots.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            slot_id = _safe_int(request.form.get("slot_id", "0"), 0)
+            conn.execute("DELETE FROM consult_doctor_availability WHERE id=? AND doctor_id=?", (slot_id, doctor["id"]))
+            conn.commit()
+            _audit_log("doctor_slot_removed", target=f"slot:{slot_id}", actor_role="doctor", actor_id=doctor["id"])
+            flash("Availability slot removed.", "info")
+
+        elif module_slug in ("users-roles", "admin-control") and action == "update_doctor_status":
+            if not doctor:
+                flash("Doctor/admin login is required to update doctor status.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            doctor_id = _safe_int(request.form.get("doctor_id", "0"), 0)
+            status = (request.form.get("status", "") or "active").strip()
+            verification_status = (request.form.get("verification_status", "") or "pending").strip()
+            conn.execute(
+                "UPDATE consult_doctors SET status=?, verification_status=? WHERE id=?",
+                (status, verification_status, doctor_id),
+            )
+            conn.commit()
+            _audit_log("doctor_status_updated", target=f"doctor:{doctor_id}", details=f"{status}|{verification_status}", actor_role="doctor", actor_id=doctor["id"])
+            flash("Doctor status updated.", "success")
+
+        elif module_slug in ("users-roles", "admin-control") and action == "update_module_permission":
+            if not doctor:
+                flash("Doctor/admin login is required to update permissions.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            role_name = (request.form.get("role_name", "") or "").strip().lower()
+            permission_module_slug = (request.form.get("permission_module_slug", "") or "").strip().lower()
+            can_view = 1 if (request.form.get("can_view", "0") == "1") else 0
+            can_edit = 1 if (request.form.get("can_edit", "0") == "1") else 0
+            if role_name and permission_module_slug:
+                conn.execute(
+                    """INSERT INTO consult_module_permissions(role_name, module_slug, can_view, can_edit, updated_at)
+                       VALUES(?,?,?,?,?)
+                       ON CONFLICT(role_name, module_slug)
+                       DO UPDATE SET can_view=excluded.can_view, can_edit=excluded.can_edit, updated_at=excluded.updated_at""",
+                    (role_name, permission_module_slug, can_view, can_edit, _now_text()),
+                )
+                conn.commit()
+                _audit_log(
+                    "module_permission_updated",
+                    target=f"{role_name}:{permission_module_slug}",
+                    details=f"view={can_view},edit={can_edit}",
+                    actor_role="doctor",
+                    actor_id=doctor["id"],
+                )
+                flash("Module permission updated.", "success")
+            else:
+                flash("Role and module are required.", "danger")
+
+        elif module_slug in ("departments", "admin-control") and action == "add_department":
+            if not doctor:
+                flash("Doctor/admin login is required to manage departments.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            name = (request.form.get("name", "") or "").strip()
+            description = (request.form.get("description", "") or "").strip()
+            if not name:
+                flash("Department name is required.", "danger")
+            else:
+                conn.execute(
+                    """INSERT INTO consult_departments(name, description, is_active, created_at)
+                       VALUES(?,?,1,?)
+                       ON CONFLICT(name) DO UPDATE SET description=excluded.description""",
+                    (name, description, _now_text()),
+                )
+                conn.commit()
+                _audit_log("department_saved", target=name, details=description, actor_role="doctor", actor_id=doctor["id"])
+                flash("Department saved.", "success")
+
+        elif module_slug in ("departments", "admin-control") and action == "assign_doctor_department":
+            if not doctor:
+                flash("Doctor/admin login is required to assign departments.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            doctor_id = _safe_int(request.form.get("doctor_id", "0"), 0)
+            department_id = _safe_int(request.form.get("department_id", "0"), 0)
+            if doctor_id and department_id:
+                conn.execute(
+                    """INSERT INTO consult_doctor_departments(doctor_id, department_id, created_at)
+                       VALUES(?,?,?)
+                       ON CONFLICT(doctor_id, department_id) DO NOTHING""",
+                    (doctor_id, department_id, _now_text()),
+                )
+                conn.commit()
+                _audit_log("doctor_department_assigned", target=f"doctor:{doctor_id}", details=f"department:{department_id}", actor_role="doctor", actor_id=doctor["id"])
+                flash("Doctor assigned to department.", "success")
+            else:
+                flash("Doctor and department are required.", "danger")
+
+        elif module_slug in ("admin-control", "billing", "settings") and action == "set_pricing":
+            if not doctor:
+                flash("Doctor/admin login is required to update pricing.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            service_key = (request.form.get("service_key", "") or "").strip().lower()
+            amount = _safe_float(request.form.get("amount", "0"), 0.0)
+            if not service_key or amount < 0:
+                flash("Service key and valid amount are required.", "danger")
+            else:
+                _upsert_setting(f"price_{service_key}", f"{amount:.2f}")
+                _audit_log("pricing_updated", target=service_key, details=f"{amount:.2f}", actor_role="doctor", actor_id=doctor["id"])
+                flash("Pricing updated.", "success")
+
+        elif module_slug == "notifications" and action == "queue_notification":
+            if not doctor:
+                flash("Doctor/admin login is required to queue notifications.", "warning")
+                return redirect(url_for("consult_doctor_login", next=url_for("consult_module_page", slug=module_slug)))
+            channel = (request.form.get("channel", "") or "email").strip().lower()
+            recipient_role = (request.form.get("recipient_role", "") or "patient").strip().lower()
+            recipient_id = _safe_int(request.form.get("recipient_id", "0"), 0)
+            appointment_id = _safe_int(request.form.get("appointment_id", "0"), 0)
+            subject = (request.form.get("subject", "") or "").strip()
+            message = (request.form.get("message", "") or "").strip()
+            if not subject or not message:
+                flash("Subject and message are required.", "danger")
+            else:
+                _queue_notification(
+                    channel,
+                    subject,
+                    message,
+                    recipient_role,
+                    recipient_id if recipient_id else None,
+                    appointment_id=appointment_id if appointment_id else None,
+                )
+                _audit_log("notification_queued", target=channel, details=subject, actor_role="doctor", actor_id=doctor["id"])
+                flash("Notification queued.", "success")
+
         return redirect(url_for("consult_module_page", slug=module_slug))
 
     module_data = _module_dataset(module_slug, patient, doctor)
     return _render("consultation_module.html", module=module, module_slug=module_slug, module_data=module_data)
+
+
+@app.route("/consultation/docs/<int:doc_id>")
+def consultation_download_document(doc_id):
+    if not (session.get("consult_patient_id") or session.get("consult_doctor_id")):
+        flash("Please login to access documents.", "warning")
+        return redirect(url_for("consult_patient_login", next=url_for("consultation_download_document", doc_id=doc_id)))
+    conn = get_db()
+    row = conn.execute("SELECT * FROM consult_documents WHERE id=?", (doc_id,)).fetchone()
+    if not row:
+        flash("Document not found.", "danger")
+        return redirect(url_for("consultation_home"))
+    if session.get("consult_patient_id") and row["patient_id"] != _safe_int(session.get("consult_patient_id"), 0):
+        flash("You are not allowed to access this document.", "danger")
+        return redirect(url_for("consultation_home"))
+    if session.get("consult_doctor_id"):
+        did = _safe_int(session.get("consult_doctor_id"), 0)
+        if row["doctor_id"] and row["doctor_id"] != did:
+            is_consult_doctor = conn.execute(
+                "SELECT id FROM consult_appointments WHERE id=? AND doctor_id=?",
+                (row["appointment_id"], did),
+            ).fetchone()
+            if not is_consult_doctor:
+                flash("You are not allowed to access this document.", "danger")
+                return redirect(url_for("consultation_home"))
+    return send_from_directory(UPLOAD_DIR, row["stored_name"], as_attachment=True, download_name=row["original_name"])
+
+
+@app.route("/consultation/room/<int:appointment_id>", methods=["GET", "POST"])
+def consultation_video_room(appointment_id):
+    if not (session.get("consult_patient_id") or session.get("consult_doctor_id")):
+        flash("Login required to access consultation room.", "warning")
+        return redirect(url_for("consult_patient_login", next=url_for("consultation_video_room", appointment_id=appointment_id)))
+    appt = _load_session_appointment(appointment_id)
+    if not appt:
+        flash("Appointment room access denied or appointment not found.", "danger")
+        return redirect(url_for("consultation_home"))
+    conn = get_db()
+    if request.method == "POST":
+        action = (request.form.get("action", "") or "").strip().lower()
+        if action == "send_message":
+            message = (request.form.get("message", "") or "").strip()
+            if message:
+                sender_role = "doctor" if session.get("consult_doctor_id") else "patient"
+                sender_id = _safe_int(session.get("consult_doctor_id") or session.get("consult_patient_id"), 0)
+                sender_name = (current_doctor()["full_name"] if sender_role == "doctor" else current_patient()["full_name"])
+                conn.execute(
+                    """INSERT INTO consult_appointment_messages(appointment_id, sender_role, sender_id, sender_name, message, created_at)
+                       VALUES(?,?,?,?,?,?)""",
+                    (appt["id"], sender_role, sender_id, sender_name, message, _now_text()),
+                )
+                conn.commit()
+        elif action == "add_note":
+            note = (request.form.get("note", "") or "").strip()
+            visibility = (request.form.get("visibility", "") or "private").strip().lower()
+            if note:
+                author_role = "doctor" if session.get("consult_doctor_id") else "patient"
+                author_id = _safe_int(session.get("consult_doctor_id") or session.get("consult_patient_id"), 0)
+                conn.execute(
+                    """INSERT INTO consult_appointment_notes(appointment_id, author_role, author_id, visibility, note, created_at)
+                       VALUES(?,?,?,?,?,?)""",
+                    (appt["id"], author_role, author_id, visibility if visibility in ("private", "shared") else "private", note, _now_text()),
+                )
+                conn.commit()
+        elif action == "start_call" and session.get("consult_doctor_id"):
+            conn.execute("UPDATE consult_appointments SET status='In Progress', updated_at=? WHERE id=?", (_now_text(), appt["id"]))
+            conn.commit()
+            _audit_log("consultation_started", target=f"appointment:{appt['appointment_code']}", actor_role="doctor", actor_id=_safe_int(session.get("consult_doctor_id"), 0))
+        return redirect(url_for("consultation_video_room", appointment_id=appointment_id))
+
+    video_room = _create_video_room_for_appointment(appt)
+    messages = conn.execute(
+        "SELECT * FROM consult_appointment_messages WHERE appointment_id=? ORDER BY id ASC",
+        (appt["id"],),
+    ).fetchall()
+    if session.get("consult_doctor_id"):
+        notes = conn.execute(
+            "SELECT * FROM consult_appointment_notes WHERE appointment_id=? ORDER BY id DESC",
+            (appt["id"],),
+        ).fetchall()
+    else:
+        notes = conn.execute(
+            "SELECT * FROM consult_appointment_notes WHERE appointment_id=? AND visibility='shared' ORDER BY id DESC",
+            (appt["id"],),
+        ).fetchall()
+    return _render(
+        "consultation_video_room.html",
+        appt=appt,
+        video_room=video_room,
+        messages=messages,
+        notes=notes,
+        is_doctor=bool(session.get("consult_doctor_id")),
+    )
+
+
+@app.route("/consultation/prescription/<int:appointment_id>/print")
+def consultation_print_prescription(appointment_id):
+    if not (session.get("consult_patient_id") or session.get("consult_doctor_id")):
+        flash("Login required to view printable prescription.", "warning")
+        return redirect(url_for("consult_patient_login", next=url_for("consultation_print_prescription", appointment_id=appointment_id)))
+    appt = _load_session_appointment(appointment_id)
+    if not appt:
+        flash("Prescription record not found.", "danger")
+        return redirect(url_for("consultation_home"))
+    if not (appt["prescription"] or "").strip():
+        flash("No prescription has been issued for this appointment yet.", "warning")
+        return redirect(url_for("consultation_home"))
+    refill_history = get_db().execute(
+        """SELECT * FROM consult_prescription_refills
+           WHERE appointment_id=?
+           ORDER BY requested_at DESC, id DESC""",
+        (appointment_id,),
+    ).fetchall()
+    return _render("consultation_prescription_print.html", appt=appt, refill_history=refill_history)
+
+
+@app.route("/consultation/manifest.webmanifest")
+def consultation_manifest():
+    return send_from_directory(os.path.join(BASE_DIR, "static"), "consultation-manifest.webmanifest")
+
+
+@app.route("/consultation/sw.js")
+def consultation_service_worker():
+    return send_from_directory(os.path.join(BASE_DIR, "static"), "consultation-sw.js")
 
 
 @app.route("/consultation/quick-book", methods=["POST"])
@@ -993,6 +2249,22 @@ def consult_quick_book():
     except Exception:
         flash("Invalid date/time format for booking.", "danger")
         return redirect(url_for("consultation_home"))
+    if not _doctor_allows_datetime(doctor, dt):
+        suggestions = _suggest_next_slots(doctor, dt, limit=3)
+        suggestion_text = ", ".join([s["scheduled_for"] for s in suggestions]) if suggestions else ""
+        if suggestion_text:
+            flash(f"Doctor is unavailable for the selected slot. Try: {suggestion_text}", "warning")
+        else:
+            flash("Doctor is unavailable for the selected slot. Please choose another time.", "warning")
+        return redirect(url_for("consultation_home"))
+    if _doctor_has_conflict(doctor["id"], scheduled_for):
+        suggestions = _suggest_next_slots(doctor, dt + timedelta(minutes=_slot_interval_minutes()), limit=3)
+        suggestion_text = ", ".join([s["scheduled_for"] for s in suggestions]) if suggestions else ""
+        if suggestion_text:
+            flash(f"Selected slot is already booked. Try these slots: {suggestion_text}", "warning")
+        else:
+            flash("Selected slot is already booked. Please choose another time.", "warning")
+        return redirect(url_for("consultation_home"))
 
     code = _appointment_code()
     conn.execute(
@@ -1003,6 +2275,22 @@ def consult_quick_book():
     )
     conn.commit()
     appt = conn.execute("SELECT id FROM consult_appointments WHERE appointment_code=?", (code,)).fetchone()
+    _create_invoice_for_appointment(appt["id"])
+    _queue_multi_channel_notification(
+        "patient",
+        patient["id"],
+        "Appointment booked",
+        f"Your appointment {code} with Dr. {doctor['full_name']} is booked for {scheduled_for}.",
+        appointment_id=appt["id"],
+    )
+    _queue_multi_channel_notification(
+        "doctor",
+        doctor["id"],
+        "New appointment request",
+        f"New patient booking {code} scheduled for {scheduled_for}.",
+        appointment_id=appt["id"],
+    )
+    _audit_log("appointment_booked", target=f"appointment:{code}", details=f"doctor_id={doctor['id']}", actor_role="patient", actor_id=patient["id"])
     flash("Appointment booked successfully from quick booking panel.", "success")
     return redirect(url_for("consult_patient_appointment_detail", appointment_id=appt["id"]))
 
@@ -1045,6 +2333,12 @@ def consult_patient_signup():
             row = conn.execute("SELECT * FROM consult_patients WHERE email=?", (email,)).fetchone()
             session.clear()
             session["consult_patient_id"] = row["id"]
+            _queue_multi_channel_notification(
+                "patient",
+                row["id"],
+                "Welcome to JHIMS Consultation",
+                "Your patient account is ready. You can now book consultations and access your records.",
+            )
             _audit_log("patient_signup", target=f"patient:{row['id']}", details=f"email={email}", actor_role="patient", actor_id=row["id"])
             flash("Patient account created successfully. You can now book appointments.", "success")
             return redirect(url_for("consult_patient_dashboard"))
@@ -1183,9 +2477,25 @@ def consult_doctor_signup():
             )
             conn.commit()
             row = conn.execute("SELECT * FROM consult_doctors WHERE email=?", (email,)).fetchone()
+            dep_row = conn.execute("SELECT id FROM consult_departments WHERE name=?", (specialty,)).fetchone()
+            if dep_row:
+                conn.execute(
+                    """INSERT INTO consult_doctor_departments(doctor_id, department_id, created_at)
+                       VALUES(?,?,?)
+                       ON CONFLICT(doctor_id, department_id) DO NOTHING""",
+                    (row["id"], dep_row["id"], _now_text()),
+                )
+                conn.commit()
             session.clear()
             session["consult_doctor_id"] = row["id"]
             _audit_log("doctor_signup", target=f"doctor:{row['id']}", details=f"email={email}", actor_role="doctor", actor_id=row["id"])
+            _queue_notification(
+                "email",
+                "New doctor signup",
+                f"Doctor {row['full_name']} ({row['email']}) registered and may require approval review.",
+                "system",
+                None,
+            )
             flash("Doctor account created. Keep profile complete so patients can trust and book you.", "success")
             return redirect(url_for("consult_doctor_dashboard"))
     return _render("consultation_doctor_signup.html")
@@ -1281,7 +2591,7 @@ def consult_patient_dashboard():
            ORDER BY a.scheduled_for DESC, a.id DESC""",
         (patient["id"],),
     ).fetchall()
-    upcoming = [row for row in appointments if row["status"] in ("Requested", "Confirmed", "Reschedule Requested")]
+    upcoming = [row for row in appointments if row["status"] in ("Requested", "Confirmed", "Reschedule Requested", "In Progress")]
     completed = [row for row in appointments if row["status"] == "Completed"]
     doctors = conn.execute(
         """SELECT * FROM consult_doctors
@@ -1394,6 +2704,29 @@ def _load_doctor_appointment_or_404(appointment_id, doctor_id):
     return row
 
 
+def _load_session_appointment(appointment_id):
+    conn = get_db()
+    where = ["a.id=?"]
+    params = [appointment_id]
+    if session.get("consult_doctor_id"):
+        where.append("a.doctor_id=?")
+        params.append(_safe_int(session.get("consult_doctor_id"), 0))
+    elif session.get("consult_patient_id"):
+        where.append("a.patient_id=?")
+        params.append(_safe_int(session.get("consult_patient_id"), 0))
+    else:
+        return None
+    return conn.execute(
+        f"""SELECT a.*, p.full_name AS patient_name, p.email AS patient_email, p.phone AS patient_phone,
+                   d.full_name AS doctor_name, d.specialty, d.meeting_provider
+            FROM consult_appointments a
+            JOIN consult_patients p ON p.id=a.patient_id
+            JOIN consult_doctors d ON d.id=a.doctor_id
+            WHERE {' AND '.join(where)}""",
+        params,
+    ).fetchone()
+
+
 @app.route("/consultation/patient/appointment/<int:appointment_id>", methods=["GET", "POST"])
 @patient_required
 def consult_patient_appointment_detail(appointment_id):
@@ -1415,6 +2748,13 @@ def consult_patient_appointment_detail(appointment_id):
                     (appt["id"], "patient", patient["id"], patient["full_name"], message, _now_text()),
                 )
                 conn.commit()
+                _queue_multi_channel_notification(
+                    "doctor",
+                    appt["doctor_id"],
+                    "New patient message",
+                    f"Patient sent a new message on appointment {appt['appointment_code']}.",
+                    appointment_id=appt["id"],
+                )
                 flash("Message sent to doctor.", "success")
             else:
                 flash("Message cannot be empty.", "danger")
@@ -1436,6 +2776,13 @@ def consult_patient_appointment_detail(appointment_id):
                     details=reason or "no reason provided",
                     actor_role="patient",
                     actor_id=patient["id"],
+                )
+                _queue_multi_channel_notification(
+                    "doctor",
+                    appt["doctor_id"],
+                    "Appointment cancelled by patient",
+                    f"Appointment {appt['appointment_code']} was cancelled by the patient.",
+                    appointment_id=appt["id"],
                 )
                 flash("Appointment has been cancelled.", "info")
         return redirect(url_for("consult_patient_appointment_detail", appointment_id=appointment_id))
@@ -1464,7 +2811,7 @@ def consult_doctor_dashboard():
     ).fetchall()
 
     pending = [row for row in appointments if row["status"] == "Requested"]
-    upcoming = [row for row in appointments if row["status"] in ("Confirmed", "Reschedule Requested")]
+    upcoming = [row for row in appointments if row["status"] in ("Confirmed", "Reschedule Requested", "In Progress")]
     completed = [row for row in appointments if row["status"] == "Completed"]
 
     return _render(
@@ -1540,20 +2887,43 @@ def consult_doctor_appointment_detail(appointment_id):
                     (appt["id"], "doctor", doctor["id"], doctor["full_name"], message, _now_text()),
                 )
                 conn.commit()
+                _queue_multi_channel_notification(
+                    "patient",
+                    appt["patient_id"],
+                    "New doctor message",
+                    f"Doctor sent you a message on appointment {appt['appointment_code']}.",
+                    appointment_id=appt["id"],
+                )
                 flash("Message sent to patient.", "success")
             else:
                 flash("Message cannot be empty.", "danger")
         elif action == "accept":
+            if _doctor_has_conflict(doctor["id"], appt["scheduled_for"], exclude_appointment_id=appt["id"]):
+                suggestions = _suggest_next_slots(doctor, datetime.now(), limit=3)
+                suggestion_text = ", ".join([s["scheduled_for"] for s in suggestions]) if suggestions else ""
+                if suggestion_text:
+                    flash(f"Cannot confirm due to slot conflict. Suggested slots: {suggestion_text}", "warning")
+                else:
+                    flash("Cannot confirm due to slot conflict.", "warning")
+                return redirect(url_for("consult_doctor_appointment_detail", appointment_id=appointment_id))
             conn.execute(
                 "UPDATE consult_appointments SET status='Confirmed', updated_at=? WHERE id=?",
                 (_now_text(), appt["id"]),
             )
             conn.commit()
+            _create_invoice_for_appointment(appt["id"])
             _audit_log(
                 "appointment_confirmed_by_doctor",
                 target=f"appointment:{appt['appointment_code']}",
                 actor_role="doctor",
                 actor_id=doctor["id"],
+            )
+            _queue_multi_channel_notification(
+                "patient",
+                appt["patient_id"],
+                "Appointment confirmed",
+                f"Your appointment {appt['appointment_code']} has been confirmed by the doctor.",
+                appointment_id=appt["id"],
             )
             flash("Appointment confirmed.", "success")
         elif action == "reschedule":
@@ -1564,7 +2934,26 @@ def consult_doctor_appointment_detail(appointment_id):
             else:
                 try:
                     scheduled_for = f"{new_date} {new_time}:00"
-                    datetime.strptime(scheduled_for, "%Y-%m-%d %H:%M:%S")
+                    dt_new = datetime.strptime(scheduled_for, "%Y-%m-%d %H:%M:%S")
+                    if dt_new <= datetime.now():
+                        flash("Reschedule time must be in the future.", "danger")
+                        return redirect(url_for("consult_doctor_appointment_detail", appointment_id=appointment_id))
+                    if not _doctor_allows_datetime(doctor, dt_new):
+                        suggestions = _suggest_next_slots(doctor, dt_new + timedelta(minutes=_slot_interval_minutes()), limit=3)
+                        suggestion_text = ", ".join([s["scheduled_for"] for s in suggestions]) if suggestions else ""
+                        if suggestion_text:
+                            flash(f"That time is outside your availability window. Suggestions: {suggestion_text}", "warning")
+                        else:
+                            flash("That time is outside your availability window.", "warning")
+                        return redirect(url_for("consult_doctor_appointment_detail", appointment_id=appointment_id))
+                    if _doctor_has_conflict(doctor["id"], scheduled_for, exclude_appointment_id=appt["id"]):
+                        suggestions = _suggest_next_slots(doctor, dt_new + timedelta(minutes=_slot_interval_minutes()), limit=3)
+                        suggestion_text = ", ".join([s["scheduled_for"] for s in suggestions]) if suggestions else ""
+                        if suggestion_text:
+                            flash(f"Selected time conflicts with another appointment. Suggestions: {suggestion_text}", "warning")
+                        else:
+                            flash("Selected time conflicts with another appointment.", "warning")
+                        return redirect(url_for("consult_doctor_appointment_detail", appointment_id=appointment_id))
                     conn.execute(
                         """UPDATE consult_appointments
                            SET scheduled_for=?, status='Reschedule Requested', updated_at=?
@@ -1578,6 +2967,13 @@ def consult_doctor_appointment_detail(appointment_id):
                         details=f"scheduled_for={scheduled_for}",
                         actor_role="doctor",
                         actor_id=doctor["id"],
+                    )
+                    _queue_multi_channel_notification(
+                        "patient",
+                        appt["patient_id"],
+                        "Appointment rescheduled",
+                        f"Your appointment {appt['appointment_code']} has a new time: {scheduled_for}.",
+                        appointment_id=appt["id"],
                     )
                     flash("Appointment moved to new schedule.", "success")
                 except Exception:
@@ -1598,6 +2994,13 @@ def consult_doctor_appointment_detail(appointment_id):
                 actor_role="doctor",
                 actor_id=doctor["id"],
             )
+            _queue_multi_channel_notification(
+                "patient",
+                appt["patient_id"],
+                "Appointment cancelled",
+                f"Your appointment {appt['appointment_code']} was cancelled by the doctor.",
+                appointment_id=appt["id"],
+            )
             flash("Appointment cancelled by doctor.", "warning")
         elif action == "complete":
             diagnosis = request.form.get("diagnosis", "").strip()
@@ -1612,12 +3015,21 @@ def consult_doctor_appointment_detail(appointment_id):
                 (diagnosis, prescription, doctor_notes, follow_up_date, meeting_link, _now_text(), appt["id"]),
             )
             conn.commit()
+            _create_invoice_for_appointment(appt["id"])
+            _refresh_invoice_status_for_appointment(appt["id"])
             _audit_log(
                 "consultation_completed",
                 target=f"appointment:{appt['appointment_code']}",
                 details=f"follow_up_date={follow_up_date}",
                 actor_role="doctor",
                 actor_id=doctor["id"],
+            )
+            _queue_multi_channel_notification(
+                "patient",
+                appt["patient_id"],
+                "Consultation completed",
+                f"Your consultation {appt['appointment_code']} has been completed. Review notes in your portal.",
+                appointment_id=appt["id"],
             )
             flash("Consultation marked as completed.", "success")
         return redirect(url_for("consult_doctor_appointment_detail", appointment_id=appointment_id))

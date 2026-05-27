@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Prescription {{ appt.appointment_code }} | JHIMS Consultation</title>
+  <style>
+    body{font-family:Segoe UI,Arial,sans-serif;background:#f4f8ff;color:#0f2a50;margin:0;padding:20px}
+    .sheet{max-width:900px;margin:0 auto;background:#fff;border:1px solid #d6e3f5;border-radius:14px;padding:24px}
+    .head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e4edf9;padding-bottom:12px;margin-bottom:14px}
+    h1,h2{margin:0}
+    h1{font-size:1.5rem}
+    .muted{color:#5e7696;font-size:.9rem}
+    .block{margin-bottom:14px}
+    .label{font-size:.78rem;color:#5f7594;text-transform:uppercase;font-weight:700;margin-bottom:4px}
+    .box{background:#f8fbff;border:1px solid #d8e8fa;border-radius:10px;padding:10px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-bottom:1px solid #e6eef9;padding:8px;text-align:left;font-size:.9rem}
+    .actions{margin-bottom:14px}
+    @media print{
+      .actions{display:none}
+      body{background:#fff;padding:0}
+      .sheet{border:none;border-radius:0;max-width:none}
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="actions">
+      <button onclick="window.print()">Print Prescription</button>
+    </div>
+    <div class="head">
+      <div>
+        <h1>JHIMS e-Prescription</h1>
+        <div class="muted">Pharmacy-ready prescription format</div>
+      </div>
+      <div class="muted">
+        <div><strong>Code:</strong> {{ appt.appointment_code }}</div>
+        <div><strong>Date:</strong> {{ appt.scheduled_for|fmt_dt }}</div>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="label">Patient</div>
+      <div class="box">{{ appt.patient_name }} | {{ appt.patient_email }} | {{ appt.patient_phone }}</div>
+    </div>
+
+    <div class="block">
+      <div class="label">Doctor</div>
+      <div class="box">Dr. {{ appt.doctor_name }} ({{ appt.specialty }})</div>
+    </div>
+
+    <div class="block">
+      <div class="label">Diagnosis</div>
+      <div class="box">{{ appt.diagnosis or "-" }}</div>
+    </div>
+
+    <div class="block">
+      <div class="label">Prescription / Treatment Plan</div>
+      <div class="box" style="white-space:pre-wrap;">{{ appt.prescription or "-" }}</div>
+    </div>
+
+    <div class="block">
+      <div class="label">Refill History</div>
+      <table>
+        <thead>
+          <tr><th>Requested At</th><th>Medication</th><th>Status</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          {% for item in refill_history %}
+          <tr>
+            <td>{{ item.requested_at|fmt_dt }}</td>
+            <td>{{ item.medication_summary }}</td>
+            <td>{{ item.refill_status }}</td>
+            <td>{{ item.request_note or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">No refill requests yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

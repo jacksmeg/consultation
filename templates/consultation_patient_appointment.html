@@ -16,6 +16,8 @@
             <span class="pill pill-bad">Cancelled</span>
           {% elif appt.status == 'Confirmed' %}
             <span class="pill pill-ok">Confirmed</span>
+          {% elif appt.status == 'In Progress' %}
+            <span class="pill pill-info">In Progress</span>
           {% elif appt.status == 'Requested' %}
             <span class="pill pill-pending">Requested</span>
           {% else %}
@@ -32,6 +34,16 @@
           <div class="tiny">Reason: {{ appt.reason }}</div>
           {% if appt.meeting_link %}
             <div style="margin-top:8px;"><a href="{{ appt.meeting_link }}" target="_blank" class="btn btn-soft">Open Meeting Link</a></div>
+          {% endif %}
+          {% if appt.status in ['Confirmed','Reschedule Requested','In Progress','Completed'] %}
+            <div style="margin-top:8px;">
+              <a href="{{ url_for('consultation_video_room', appointment_id=appt.id) }}" class="btn btn-primary">Open Video Room</a>
+            </div>
+          {% endif %}
+          {% if appt.prescription %}
+            <div style="margin-top:8px;">
+              <a href="{{ url_for('consultation_print_prescription', appointment_id=appt.id) }}" target="_blank" class="btn btn-soft">Print Prescription</a>
+            </div>
           {% endif %}
         </div>
         <div class="msg">

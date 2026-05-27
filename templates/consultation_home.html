@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>JHIMS Consultation | Smart Healthcare Dashboard</title>
+  <meta name="theme-color" content="#0e9f9b">
+  <link rel="manifest" href="{{ url_for('consultation_manifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='jhims_logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -502,6 +505,7 @@
           <a class="side-link" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="link-dot">EP</span>e-Prescriptions</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='lab-results') }}"><span class="link-dot">LB</span>Lab Results</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='payments') }}"><span class="link-dot">PM</span>Payments</a>
+          <a class="side-link" href="{{ url_for('consult_module_page', slug='mobile-pwa') }}"><span class="link-dot">MW</span>Mobile App</a>
         </div>
 
         <div class="side-group">
@@ -509,7 +513,9 @@
           <a class="side-link" href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}"><span class="link-dot">SC</span>My Schedule</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='patients') }}"><span class="link-dot">PT</span>Patients</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='consultations') }}"><span class="link-dot">CS</span>Consultations</a>
+          <a class="side-link" href="{{ url_for('consult_module_page', slug='video-room') }}"><span class="link-dot">VC</span>Video Room</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="link-dot">RX</span>e-Prescriptions</a>
+          <a class="side-link" href="{{ url_for('consult_module_page', slug='availability') }}"><span class="link-dot">AV</span>Availability</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='reports') }}"><span class="link-dot">RP</span>Reports</a>
         </div>
 
@@ -517,6 +523,9 @@
           <div class="side-label">Admin</div>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='users-roles') }}"><span class="link-dot">UR</span>Users & Roles</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='departments') }}"><span class="link-dot">DP</span>Departments</a>
+          <a class="side-link" href="{{ url_for('consult_module_page', slug='admin-control') }}"><span class="link-dot">AC</span>Admin Control</a>
+          <a class="side-link" href="{{ url_for('consult_module_page', slug='notifications') }}"><span class="link-dot">NT</span>Notifications</a>
+          <a class="side-link" href="{{ url_for('consult_module_page', slug='analytics-pro') }}"><span class="link-dot">AN</span>Analytics Pro</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='settings') }}"><span class="link-dot">ST</span>System Settings</a>
           <a class="side-link" href="{{ url_for('consult_module_page', slug='audit-logs') }}"><span class="link-dot">AL</span>Audit Logs</a>
         </div>
@@ -532,10 +541,12 @@
           <nav class="top-nav">
             <a class="top-link active" href="{{ url_for('consultation_home') }}">Dashboard</a>
             <a class="top-link" href="{{ url_for('consult_module_page', slug='consultations') }}">Consultation</a>
+            <a class="top-link" href="{{ url_for('consult_module_page', slug='video-room') }}">Video Room</a>
             <a class="top-link" href="{{ url_for('consult_patient_dashboard') if current_patient else url_for('consult_patient_login', next=url_for('consult_patient_dashboard')) }}">Patient Portal</a>
             <a class="top-link" href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}">Doctor Portal</a>
             <a class="top-link" href="{{ url_for('consult_module_page', slug='reports') }}">Reports</a>
             <a class="top-link" href="{{ url_for('consult_module_page', slug='billing') }}">Billing</a>
+            <a class="top-link" href="{{ url_for('consult_module_page', slug='analytics-pro') }}">Analytics Pro</a>
             <a class="top-link" href="{{ url_for('consult_module_page', slug='settings') }}">Settings</a>
           </nav>
 
@@ -765,5 +776,11 @@
       </section>
     </div>
   </div>
+  <script>
+    (function () {
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.register("{{ url_for('consultation_service_worker') }}").catch(function(){});
+    })();
+  </script>
 </body>
 </html>
