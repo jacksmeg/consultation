@@ -1,0 +1,86 @@
+{% extends "consultation_base.html" %}
+{% block title %}Appointment {{ appt.appointment_code }} | JHIMS Consultation{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="shell">
+    <div class="card">
+      <div class="section-head">
+        <div>
+          <h1 class="page-title">Appointment {{ appt.appointment_code }}</h1>
+          <p class="subtitle">Doctor: {{ appt.doctor_name }} ({{ appt.specialty }})</p>
+        </div>
+        <div class="badge-row">
+          {% if appt.status == 'Completed' %}
+            <span class="pill pill-ok">Completed</span>
+          {% elif appt.status == 'Cancelled' %}
+            <span class="pill pill-bad">Cancelled</span>
+          {% elif appt.status == 'Confirmed' %}
+            <span class="pill pill-ok">Confirmed</span>
+          {% elif appt.status == 'Requested' %}
+            <span class="pill pill-pending">Requested</span>
+          {% else %}
+            <span class="pill pill-info">{{ appt.status }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="msg">
+          <small>Schedule</small>
+          <strong>{{ appt.scheduled_for|fmt_dt }}</strong>
+          <div class="tiny">Mode: {{ appt.visit_mode }}</div>
+          <div class="tiny">Reason: {{ appt.reason }}</div>
+          {% if appt.meeting_link %}
+            <div style="margin-top:8px;"><a href="{{ appt.meeting_link }}" target="_blank" class="btn btn-soft">Open Meeting Link</a></div>
+          {% endif %}
+        </div>
+        <div class="msg">
+          <small>Consultation Output</small>
+          <div class="tiny"><strong>Diagnosis:</strong> {{ appt.diagnosis or '-' }}</div>
+          <div class="tiny"><strong>Prescription:</strong> {{ appt.prescription or '-' }}</div>
+          <div class="tiny"><strong>Doctor Notes:</strong> {{ appt.doctor_notes or '-' }}</div>
+          <div class="tiny"><strong>Follow-up Date:</strong> {{ appt.follow_up_date|fmt_date if appt.follow_up_date else '-' }}</div>
+        </div>
+      </div>
+
+      {% if appt.status not in ['Cancelled','Completed'] %}
+        <form method="post" style="margin-top:14px;" class="grid-2">
+          <div>
+            <label>Cancel Reason (Optional)</label>
+            <input class="input" name="cancel_reason" placeholder="Reason for cancellation">
+          </div>
+          <div style="display:flex;align-items:end;">
+            <button class="btn btn-danger" type="submit" name="action" value="cancel">Cancel Appointment</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.28rem;">Message Doctor</h2>
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="send_message">
+        <textarea class="input" rows="4" name="message" placeholder="Type your message to doctor"></textarea>
+        <button class="btn btn-primary" type="submit">Send Message</button>
+      </form>
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.28rem;">Conversation</h2>
+      <div class="msg-list">
+        {% for item in messages %}
+          <div class="msg {{ item.sender_role }}">
+            <small>{{ item.sender_name }} | {{ item.created_at|fmt_dt }}</small>
+            <div>{{ item.message }}</div>
+          </div>
+        {% else %}
+          <div class="tiny">No messages yet.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "consultation_base.html" %}
+{% block title %}Find Doctors | JHIMS Consultation{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <div>
+        <h1 class="page-title">Find a Doctor</h1>
+        <p class="subtitle">Search by name, specialty, or profile summary and book consultation instantly.</p>
+      </div>
+    </div>
+    <div class="card">
+      <form method="get" class="form-grid">
+        <div>
+          <label>Search</label>
+          <input class="input" name="q" value="{{ q or '' }}" placeholder="Name, specialty, profile keyword">
+        </div>
+        <div>
+          <label>Specialty</label>
+          <select class="input" name="specialty">
+            <option value="">All specialties</option>
+            {% for item in specialties %}
+              <option value="{{ item }}" {% if specialty == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-wide badge-row">
+          <button class="btn btn-primary" type="submit">Apply Filter</button>
+          <a class="btn btn-soft" href="{{ url_for('consult_doctor_directory') }}">Clear</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell">
+    <div class="grid-2">
+      {% for doctor in doctors %}
+        <article class="card">
+          <div class="badge-row">
+            <span class="pill pill-info">{{ doctor.specialty }}</span>
+            {% if (doctor.verification_status or 'pending') == 'verified' %}
+              <span class="pill pill-ok">Verified</span>
+            {% else %}
+              <span class="pill pill-pending">Pending Verification</span>
+            {% endif %}
+          </div>
+          <h3 style="margin:12px 0 8px;">{{ doctor.full_name }}</h3>
+          <p class="tiny" style="margin:0;">Experience: {{ doctor.years_experience or 0 }} years</p>
+          <p class="tiny" style="margin:4px 0 0;">Consultation Fee: GHS {{ '%.2f'|format(doctor.consultation_fee or 0) }}</p>
+          <p class="tiny" style="margin:4px 0 0;">Availability: {{ doctor.available_days or 'Not specified' }} | {{ doctor.available_hours or 'Not specified' }}</p>
+          <p class="tiny" style="margin:10px 0 0;">{{ doctor.bio or "Doctor profile information will appear here." }}</p>
+          <div class="badge-row" style="margin-top:12px;">
+            <a class="btn btn-primary" href="{{ url_for('consult_book_appointment', doctor_id=doctor.id) }}">Book Consultation</a>
+          </div>
+        </article>
+      {% else %}
+        <article class="card">
+          <h3 style="margin:0 0 8px;">No doctors found</h3>
+          <p class="tiny">Try removing filter criteria or checking again later.</p>
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

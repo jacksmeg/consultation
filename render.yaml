@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: jhims-consultation
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python consultation_portal_app.py
+    envVars:
+      - key: JHIMS_CONSULTATION_PUBLIC_URL
+        value: https://consultation.jhimssoftware.com
+      - key: JHIMS_CONSULTATION_DB
+        value: /var/data/consultation_portal.db
+      - key: JHIMS_CONSULTATION_SECRET_KEY
+        generateValue: true
+    disk:
+      name: consultation-db
+      mountPath: /var/data
+      sizeGB: 1

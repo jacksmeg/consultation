@@ -1,0 +1,86 @@
+{% extends "consultation_base.html" %}
+{% block title %}Doctor Dashboard | JHIMS Consultation{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Doctor Dashboard</span>
+        <h1 class="page-title" style="margin-top:10px;">Doctor Dashboard</h1>
+        <p class="subtitle">Welcome {{ doctor.full_name }}. Manage incoming online consultation bookings.</p>
+      </div>
+      <div class="badge-row">
+        {% if (doctor.verification_status or 'pending') == 'verified' %}
+          <span class="pill pill-ok">Verified Doctor</span>
+        {% else %}
+          <span class="pill pill-pending">Verification Pending</span>
+        {% endif %}
+        <a class="btn btn-soft" href="{{ url_for('consult_doctor_profile') }}">Edit Profile</a>
+      </div>
+    </div>
+    <div class="grid-3">
+      <article class="card kpi"><span class="pill pill-pending">New Requests</span><h3>{{ pending|length }}</h3><p class="tiny">Awaiting doctor action</p></article>
+      <article class="card kpi"><span class="pill pill-info">Upcoming</span><h3>{{ upcoming|length }}</h3><p class="tiny">Confirmed and active schedule</p></article>
+      <article class="card kpi"><span class="pill pill-ok">Completed</span><h3>{{ completed|length }}</h3><p class="tiny">Consultations finalized</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell card">
+    <h2 class="page-title" style="font-size:1.3rem;">Incoming Requests</h2>
+    {% if pending %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Patient</th><th>When</th><th>Mode</th><th>Reason</th><th></th></tr></thead>
+          <tbody>
+            {% for appt in pending %}
+              <tr>
+                <td>{{ appt.appointment_code }}</td>
+                <td>{{ appt.patient_name }}<br><span class="tiny">{{ appt.patient_phone }}</span></td>
+                <td>{{ appt.scheduled_for|fmt_dt }}</td>
+                <td>{{ appt.visit_mode }}</td>
+                <td>{{ appt.reason }}</td>
+                <td><a class="btn btn-soft" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=appt.id) }}">Open</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="tiny">No new requests at the moment.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.22rem;">Upcoming</h2>
+      {% for appt in upcoming %}
+        <div class="msg">
+          <small>{{ appt.appointment_code }} | {{ appt.scheduled_for|fmt_dt }}</small>
+          <strong>{{ appt.patient_name }}</strong> <span class="tiny">({{ appt.patient_phone }})</span><br>
+          <span class="tiny">{{ appt.visit_mode }} | {{ appt.reason }}</span><br>
+          <a class="btn btn-soft" style="margin-top:8px;" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=appt.id) }}">Manage</a>
+        </div>
+      {% else %}
+        <p class="tiny">No upcoming appointments.</p>
+      {% endfor %}
+    </article>
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.22rem;">Recent Completed</h2>
+      {% for appt in completed[:8] %}
+        <div class="msg">
+          <small>{{ appt.appointment_code }} | {{ appt.scheduled_for|fmt_dt }}</small>
+          <strong>{{ appt.patient_name }}</strong><br>
+          <span class="tiny">{{ appt.diagnosis or appt.reason }}</span><br>
+          <a class="btn btn-soft" style="margin-top:8px;" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=appt.id) }}">Open Notes</a>
+        </div>
+      {% else %}
+        <p class="tiny">No completed consultations yet.</p>
+      {% endfor %}
+    </article>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}JHIMS Consultation{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --navy:#03173a;
+      --navy-2:#082a5c;
+      --blue:#1674d8;
+      --sky:#27b4ef;
+      --teal:#11a49a;
+      --mint:#12b09b;
+      --paper:#f5f9ff;
+      --ink:#0d2445;
+      --muted:#55708e;
+      --line:#d6e4f4;
+      --ok:#166534;
+      --warn:#92400e;
+      --bad:#991b1b;
+      --info:#1e3a8a;
+      --card-shadow:0 22px 46px rgba(3, 28, 64, .11);
+      --soft-shadow:0 10px 24px rgba(12, 49, 98, .08);
+      --radius:20px;
+    }
+
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0;
+      font-family:"Manrope","Segoe UI",sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(circle at 7% 4%, rgba(39,180,239,.20), transparent 35%),
+        radial-gradient(circle at 93% 8%, rgba(17,164,154,.16), transparent 32%),
+        linear-gradient(180deg,#eaf4ff 0%, #f8fbff 42%, #eef6ff 100%);
+      overflow-x:hidden;
+    }
+
+    a{text-decoration:none;color:inherit}
+    img{max-width:100%;display:block}
+
+    .shell{width:min(1240px,calc(100% - 30px));margin:0 auto}
+    .section{padding:28px 0}
+    .section-tight{padding-top:14px}
+
+    .site-header{
+      position:sticky;
+      top:0;
+      z-index:120;
+      background:linear-gradient(90deg,#041736 0%, #082653 54%, #0a2e63 100%);
+      border-bottom:1px solid rgba(144,180,225,.26);
+      box-shadow:0 14px 30px rgba(2, 25, 57, .30);
+    }
+
+    .site-header .shell{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      padding:12px 0;
+      flex-wrap:wrap;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex:0 0 auto;
+      min-width:0;
+    }
+
+    .brand-mark{
+      width:46px;
+      height:46px;
+      border-radius:13px;
+      background:rgba(255,255,255,.12);
+      border:1px solid rgba(161,196,238,.34);
+      box-shadow:0 10px 24px rgba(7, 43, 91, .34);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+      padding:5px;
+      flex:none;
+    }
+
+    .brand-mark img{
+      width:100%;
+      height:100%;
+      object-fit:contain;
+    }
+
+    .brand-copy strong{
+      display:block;
+      font-family:"Sora","Manrope",sans-serif;
+      font-size:1rem;
+      line-height:1.05;
+      letter-spacing:.01em;
+      color:#ffffff;
+    }
+
+    .brand-copy span{
+      display:block;
+      font-size:.69rem;
+      font-weight:700;
+      letter-spacing:.11em;
+      text-transform:uppercase;
+      color:#b8d3f1;
+      margin-top:2px;
+    }
+
+    .menu-toggle{
+      display:none;
+      margin-left:auto;
+      border:1px solid rgba(161,196,238,.42);
+      background:rgba(255,255,255,.10);
+      color:#deecff;
+      border-radius:10px;
+      padding:8px 11px;
+      font-size:.8rem;
+      font-weight:800;
+      cursor:pointer;
+    }
+
+    .top-nav{
+      display:flex;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-left:auto;
+      justify-content:flex-end;
+    }
+
+    .top-nav a{
+      padding:9px 12px;
+      border-radius:10px;
+      color:#c7dcfa;
+      font-size:.79rem;
+      font-weight:800;
+      transition:all .2s ease;
+      white-space:nowrap;
+    }
+
+    .top-nav a:hover{
+      background:rgba(36,153,243,.18);
+      color:#ffffff;
+    }
+
+    .top-nav .nav-cta{
+      background:linear-gradient(135deg,var(--blue),var(--sky));
+      color:#ffffff;
+      border:1px solid rgba(137,197,252,.45);
+      box-shadow:0 10px 22px rgba(16,103,187,.34);
+    }
+
+    .top-nav .nav-cta:hover{
+      transform:translateY(-1px);
+      box-shadow:0 14px 25px rgba(16,103,187,.42);
+    }
+
+    .card{
+      background:linear-gradient(180deg,#ffffff 0%, #f7fbff 100%);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--card-shadow);
+      padding:20px;
+      position:relative;
+      overflow:hidden;
+    }
+
+    .card::before{
+      content:"";
+      position:absolute;
+      width:220px;
+      height:220px;
+      border-radius:999px;
+      right:-120px;
+      top:-120px;
+      background:radial-gradient(circle,rgba(39,180,239,.18),rgba(39,180,239,0) 70%);
+      pointer-events:none;
+    }
+
+    .card > *{
+      position:relative;
+      z-index:1;
+    }
+
+    .card-soft{
+      background:#ffffff;
+      box-shadow:var(--soft-shadow);
+    }
+
+    .grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+
+    .page-title{
+      margin:0 0 8px;
+      font-family:"Sora","Manrope",sans-serif;
+      font-size:clamp(1.5rem,2.8vw,2.42rem);
+      line-height:1.06;
+      letter-spacing:-.025em;
+      color:#0b2b57;
+    }
+
+    .subtitle{
+      margin:0;
+      color:var(--muted);
+      line-height:1.72;
+      font-size:.95rem;
+    }
+
+    .eyebrow{
+      display:inline-flex;
+      align-items:center;
+      padding:6px 11px;
+      border-radius:999px;
+      border:1px solid #bde5dc;
+      background:#ebfbf6;
+      color:#11867d;
+      font-size:.72rem;
+      font-weight:900;
+      letter-spacing:.09em;
+      text-transform:uppercase;
+    }
+
+    .section-head{
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:flex-end;
+      flex-wrap:wrap;
+      margin-bottom:14px;
+    }
+
+    .badge-row{display:flex;gap:8px;flex-wrap:wrap}
+
+    .flash-stack{display:grid;gap:9px;margin:15px 0}
+    .flash{
+      border-radius:12px;
+      padding:11px 12px;
+      font-size:.88rem;
+      font-weight:700;
+      line-height:1.55;
+      border:1px solid transparent;
+      box-shadow:0 8px 16px rgba(11, 48, 90, .08);
+    }
+    .flash-success{background:#dcfce7;color:var(--ok);border-color:#bbf7d0}
+    .flash-danger{background:#fee2e2;color:var(--bad);border-color:#fecaca}
+    .flash-warning{background:#fef3c7;color:var(--warn);border-color:#fde68a}
+    .flash-info{background:#dbeafe;color:var(--info);border-color:#bfdbfe}
+
+    label{
+      display:block;
+      margin-bottom:6px;
+      font-size:.74rem;
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      color:#4f6b8f;
+    }
+
+    .input{
+      width:100%;
+      border:1.5px solid #c8dbef;
+      border-radius:12px;
+      padding:12px;
+      font:inherit;
+      background:#fff;
+      color:#112f57;
+      transition:border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+    }
+
+    .input:focus{
+      outline:none;
+      border-color:var(--blue);
+      box-shadow:0 0 0 4px rgba(22,116,216,.15);
+      transform:translateY(-1px);
+    }
+
+    textarea.input{resize:vertical}
+
+    .btn{
+      appearance:none;
+      border:none;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      border-radius:999px;
+      padding:11px 16px;
+      font-size:.85rem;
+      font-weight:900;
+      transition:transform .16s ease, box-shadow .16s ease;
+    }
+
+    .btn:hover{
+      transform:translateY(-1px);
+    }
+
+    .btn-primary{
+      background:linear-gradient(135deg,var(--navy),var(--blue));
+      color:#fff;
+      box-shadow:0 14px 26px rgba(13,71,141,.24);
+    }
+
+    .btn-soft{
+      background:#ffffff;
+      color:var(--ink);
+      border:1px solid #c8dbef;
+      box-shadow:0 10px 20px rgba(11, 48, 90, .08);
+    }
+
+    .btn-warn{background:#f59e0b;color:#111827}
+    .btn-danger{background:#dc2626;color:#fff}
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:.7rem;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+    }
+    .pill-ok{background:#dcfce7;color:#166534}
+    .pill-pending{background:#fef3c7;color:#92400e}
+    .pill-bad{background:#fee2e2;color:#991b1b}
+    .pill-info{background:#dbeafe;color:#1e3a8a}
+
+    .tiny{font-size:.83rem;color:var(--muted)}
+    .tiny strong{color:#173e6d}
+
+    .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .form-wide{grid-column:1/-1}
+
+    .table-wrap{
+      overflow-x:auto;
+      border:1px solid #d6e4f4;
+      border-radius:14px;
+      background:#fff;
+      box-shadow:0 8px 18px rgba(11,48,90,.07);
+    }
+
+    table{
+      width:100%;
+      min-width:680px;
+      border-collapse:collapse;
+      background:#fff;
+    }
+
+    th,td{
+      padding:11px 10px;
+      border-bottom:1px solid #e1ecf8;
+      text-align:left;
+      font-size:.86rem;
+      vertical-align:top;
+    }
+
+    th{
+      background:#f4f9ff;
+      font-size:.71rem;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      color:#5a7698;
+      position:sticky;
+      top:0;
+      z-index:1;
+    }
+
+    .msg-list{display:grid;gap:10px}
+    .msg{
+      border-radius:14px;
+      padding:11px 12px;
+      border:1px solid #d6e4f4;
+      background:#ffffff;
+      box-shadow:0 8px 16px rgba(12,49,98,.06);
+    }
+    .msg.doctor{border-left:4px solid #2563eb}
+    .msg.patient{border-left:4px solid #0f766e}
+    .msg small{
+      display:block;
+      color:#5a7595;
+      margin-bottom:4px;
+      font-size:.77rem;
+      font-weight:700;
+    }
+
+    .kpi{
+      display:grid;
+      gap:8px;
+    }
+    .kpi h3{
+      margin:0;
+      font-family:"Sora","Manrope",sans-serif;
+      font-size:2rem;
+      line-height:1;
+      color:#0b2b57;
+    }
+
+    .hero-split{
+      display:grid;
+      grid-template-columns:1.08fr .92fr;
+      gap:16px;
+      align-items:stretch;
+    }
+
+    .feature-grid{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:14px;
+    }
+
+    .feature-tile{
+      border:1px solid #d7e5f5;
+      border-radius:16px;
+      background:#ffffff;
+      padding:14px;
+      box-shadow:0 10px 22px rgba(11,48,90,.07);
+    }
+
+    .feature-tile h3{
+      margin:8px 0 7px;
+      font-size:1rem;
+      color:#103b6b;
+    }
+
+    .feature-icon{
+      width:36px;
+      height:36px;
+      border-radius:10px;
+      background:linear-gradient(135deg,#ddf0ff,#dcfbf5);
+      color:#145fa9;
+      font-size:.82rem;
+      font-weight:900;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .visual-stack{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+    }
+
+    .visual-surface{
+      border:1px solid #d7e5f5;
+      border-radius:14px;
+      overflow:hidden;
+      background:#fff;
+      box-shadow:0 10px 22px rgba(11,48,90,.09);
+    }
+
+    .visual-surface img{
+      width:100%;
+      height:205px;
+      object-fit:cover;
+      object-position:top;
+      background:#e6effb;
+    }
+
+    .site-footer{
+      margin-top:12px;
+      padding:18px 0 36px;
+      color:#9fc2e8;
+      background:linear-gradient(105deg,#011739 0%, #062a5c 56%, #0a3c73 100%);
+      border-top:1px solid rgba(139,179,228,.26);
+    }
+
+    .site-footer p{
+      margin:0;
+      font-size:.85rem;
+      line-height:1.6;
+    }
+
+    .reveal{
+      animation:rise .46s ease both;
+    }
+
+    .reveal.delay-1{animation-delay:.08s}
+    .reveal.delay-2{animation-delay:.16s}
+
+    @keyframes rise{
+      0%{opacity:0;transform:translateY(12px)}
+      100%{opacity:1;transform:translateY(0)}
+    }
+
+    @media (max-width:1040px){
+      .menu-toggle{display:inline-flex}
+      .top-nav{
+        display:none;
+        width:100%;
+        margin-top:8px;
+        padding-top:8px;
+        border-top:1px solid rgba(139,179,228,.3);
+        justify-content:flex-start;
+      }
+      .top-nav.open{display:flex}
+      .hero-split,.grid-2,.grid-3,.feature-grid,.form-grid{grid-template-columns:1fr}
+      .form-wide{grid-column:auto}
+    }
+
+    @media (max-width:760px){
+      .shell{width:calc(100% - 18px)}
+      .section{padding:20px 0}
+      .card{padding:16px}
+      .page-title{font-size:clamp(1.35rem,7.2vw,2rem)}
+      .top-nav a{padding:8px 10px}
+      .brand-copy span{letter-spacing:.08em}
+      table{min-width:620px}
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      html{scroll-behavior:auto}
+      *,*::before,*::after{
+        animation-duration:.01ms !important;
+        animation-iteration-count:1 !important;
+        transition-duration:.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell">
+      <a class="brand" href="{{ url_for('consultation_home') }}">
+        <span class="brand-mark">
+          <img src="{{ url_for('static', filename='jhims_logo.png') }}" alt="JHIMS">
+        </span>
+        <span class="brand-copy">
+          <strong>JHIMS Consultation</strong>
+          <span>consultation.jhimssoftware.com</span>
+        </span>
+      </a>
+
+      <button type="button" class="menu-toggle" id="consultNavToggle">Menu</button>
+
+      <nav class="top-nav" id="consultTopNav">
+        <a href="{{ url_for('consultation_home') }}">Home</a>
+        {% if current_patient %}
+          <a href="{{ url_for('consult_patient_dashboard') }}">Patient Dashboard</a>
+          <a href="{{ url_for('consult_doctor_directory') }}">Find Doctors</a>
+          <a href="{{ url_for('consult_patient_change_password') }}">Change Password</a>
+          <a href="{{ url_for('consult_patient_logout') }}" class="nav-cta">Patient Logout</a>
+        {% elif current_doctor %}
+          <a href="{{ url_for('consult_doctor_dashboard') }}">Doctor Dashboard</a>
+          <a href="{{ url_for('consult_doctor_profile') }}">Doctor Profile</a>
+          <a href="{{ url_for('consult_doctor_change_password') }}">Change Password</a>
+          <a href="{{ url_for('consult_doctor_logout') }}" class="nav-cta">Doctor Logout</a>
+        {% else %}
+          <a href="{{ url_for('consult_patient_login') }}">Patient Login</a>
+          <a href="{{ url_for('consult_patient_signup') }}">Patient Signup</a>
+          <a href="{{ url_for('consult_doctor_login') }}">Doctor Login</a>
+          <a href="{{ url_for('consult_doctor_signup') }}" class="nav-cta">Join as Doctor</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="shell">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-stack">
+            {% for category, message in messages %}
+              {% set mapped = 'info' %}
+              {% if category in ['danger','error'] %}{% set mapped = 'danger' %}{% endif %}
+              {% if category in ['success'] %}{% set mapped = 'success' %}{% endif %}
+              {% if category in ['warning'] %}{% set mapped = 'warning' %}{% endif %}
+              <div class="flash flash-{{ mapped }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+    </div>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell">
+      <p>JHIMS Consultation Portal | Secure patient-doctor online consultation workflow with patient and doctor modules.</p>
+    </div>
+  </footer>
+
+  <script>
+    (function(){
+      var toggle = document.getElementById("consultNavToggle");
+      var nav = document.getElementById("consultTopNav");
+      if (!toggle || !nav) return;
+      toggle.addEventListener("click", function(){
+        nav.classList.toggle("open");
+      });
+    })();
+  </script>
+</body>
+</html>

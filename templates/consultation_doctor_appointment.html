@@ -1,0 +1,117 @@
+{% extends "consultation_base.html" %}
+{% block title %}Manage {{ appt.appointment_code }} | JHIMS Consultation{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="shell">
+    <div class="card">
+      <div class="section-head">
+        <div>
+          <h1 class="page-title">Manage Appointment {{ appt.appointment_code }}</h1>
+          <p class="subtitle">Patient: {{ appt.patient_name }} | {{ appt.patient_phone }} | {{ appt.patient_email }}</p>
+        </div>
+        <div class="badge-row">
+          {% if appt.status == 'Completed' %}
+            <span class="pill pill-ok">Completed</span>
+          {% elif appt.status == 'Cancelled' %}
+            <span class="pill pill-bad">Cancelled</span>
+          {% elif appt.status == 'Confirmed' %}
+            <span class="pill pill-ok">Confirmed</span>
+          {% elif appt.status == 'Requested' %}
+            <span class="pill pill-pending">Requested</span>
+          {% else %}
+            <span class="pill pill-info">{{ appt.status }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="msg">
+          <small>Schedule and request</small>
+          <div class="tiny"><strong>When:</strong> {{ appt.scheduled_for|fmt_dt }}</div>
+          <div class="tiny"><strong>Mode:</strong> {{ appt.visit_mode }}</div>
+          <div class="tiny"><strong>Reason:</strong> {{ appt.reason }}</div>
+          <div class="tiny"><strong>Symptoms:</strong> {{ appt.symptoms or '-' }}</div>
+        </div>
+        <div class="msg">
+          <small>Existing outcome</small>
+          <div class="tiny"><strong>Diagnosis:</strong> {{ appt.diagnosis or '-' }}</div>
+          <div class="tiny"><strong>Prescription:</strong> {{ appt.prescription or '-' }}</div>
+          <div class="tiny"><strong>Notes:</strong> {{ appt.doctor_notes or '-' }}</div>
+          <div class="tiny"><strong>Follow-up:</strong> {{ appt.follow_up_date|fmt_date if appt.follow_up_date else '-' }}</div>
+        </div>
+      </div>
+
+      {% if appt.status not in ['Cancelled','Completed'] %}
+        <div class="badge-row" style="margin-top:14px;">
+          <form method="post">
+            <input type="hidden" name="action" value="accept">
+            <button class="btn btn-primary" type="submit">Accept / Confirm</button>
+          </form>
+          <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input type="hidden" name="action" value="reschedule">
+            <input class="input" type="date" name="new_date" style="max-width:180px;">
+            <input class="input" type="time" name="new_time" style="max-width:150px;">
+            <button class="btn btn-warn" type="submit">Reschedule</button>
+          </form>
+          <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input type="hidden" name="action" value="cancel">
+            <input class="input" name="doctor_cancel_reason" placeholder="Cancel reason">
+            <button class="btn btn-danger" type="submit">Cancel</button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.3rem;">Complete Consultation</h2>
+      <form method="post" style="display:grid;gap:10px;">
+        <input type="hidden" name="action" value="complete">
+        <div>
+          <label>Meeting Link</label>
+          <input class="input" name="meeting_link" value="{{ appt.meeting_link or '' }}" placeholder="https://meet.google.com/...">
+        </div>
+        <div>
+          <label>Diagnosis</label>
+          <textarea class="input" rows="3" name="diagnosis">{{ appt.diagnosis or '' }}</textarea>
+        </div>
+        <div>
+          <label>Prescription / Treatment</label>
+          <textarea class="input" rows="3" name="prescription">{{ appt.prescription or '' }}</textarea>
+        </div>
+        <div>
+          <label>Consultation Notes</label>
+          <textarea class="input" rows="4" name="doctor_notes">{{ appt.doctor_notes or '' }}</textarea>
+        </div>
+        <div>
+          <label>Follow-up Date</label>
+          <input class="input" type="date" name="follow_up_date" value="{{ appt.follow_up_date or '' }}">
+        </div>
+        <button class="btn btn-primary" type="submit">Mark as Completed</button>
+      </form>
+    </article>
+
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.3rem;">Patient Conversation</h2>
+      <form method="post" style="display:grid;gap:10px;margin-bottom:12px;">
+        <input type="hidden" name="action" value="send_message">
+        <textarea class="input" rows="3" name="message" placeholder="Type message to patient"></textarea>
+        <button class="btn btn-soft" type="submit">Send Message</button>
+      </form>
+      <div class="msg-list">
+        {% for item in messages %}
+          <div class="msg {{ item.sender_role }}">
+            <small>{{ item.sender_name }} | {{ item.created_at|fmt_dt }}</small>
+            <div>{{ item.message }}</div>
+          </div>
+        {% else %}
+          <div class="tiny">No messages yet.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </div>
+</section>
+{% endblock %}

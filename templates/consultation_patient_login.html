@@ -1,0 +1,38 @@
+{% extends "consultation_base.html" %}
+{% block title %}Patient Login | JHIMS Consultation{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="shell hero-split">
+    <article class="card reveal">
+      <span class="eyebrow">Patient Access</span>
+      <h1 class="page-title">Welcome back to your consultation dashboard</h1>
+      <p class="subtitle">
+        Log in to view upcoming appointments, completed consultations, doctor messages, and follow-up plans.
+      </p>
+      <div class="visual-surface" style="margin-top:14px;">
+        <img src="{{ url_for('static', filename='img/consultation_patient.png') }}" alt="Patient portal access">
+      </div>
+    </article>
+
+    <article class="card reveal delay-1" style="max-width:560px;justify-self:center;width:100%;">
+      <h2 class="page-title" style="font-size:1.5rem;">Patient Login</h2>
+      <p class="subtitle">Use your registered email and password.</p>
+      <form method="post" style="margin-top:16px;display:grid;gap:12px;">
+        <div>
+          <label>Email</label>
+          <input class="input" type="email" name="email" required>
+        </div>
+        <div>
+          <label>Password</label>
+          <input class="input" type="password" name="password" required>
+        </div>
+        <button class="btn btn-primary" type="submit">Login to Dashboard</button>
+      </form>
+      <p class="tiny" style="margin-top:12px;">
+        No account yet?
+        <a href="{{ url_for('consult_patient_signup') }}" style="color:#1b63c7;font-weight:800;">Create patient account</a>
+      </p>
+    </article>
+  </div>
+</section>
+{% endblock %}

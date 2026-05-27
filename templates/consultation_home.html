@@ -1,0 +1,131 @@
+{% extends "consultation_base.html" %}
+{% block title %}JHIMS Consultation Portal{% endblock %}
+{% block content %}
+<section class="section section-tight">
+  <div class="shell hero-split">
+    <article class="card reveal">
+      <span class="eyebrow">Built for Real Care Delivery</span>
+      <h1 class="page-title">Online consultation for patients and doctors in one professional portal.</h1>
+      <p class="subtitle">
+        JHIMS Consultation gives patients a clean path from signup to booking, while doctors manage appointments,
+        consultations, diagnosis notes, prescriptions, and follow-up from one secure workspace.
+      </p>
+      <div class="badge-row" style="margin-top:14px;">
+        <a class="btn btn-primary" href="{{ url_for('consult_patient_signup') }}">Create Patient Account</a>
+        <a class="btn btn-soft" href="{{ url_for('consult_patient_login') }}">Patient Login</a>
+        <a class="btn btn-soft" href="{{ url_for('consult_doctor_signup') }}">Join as Doctor</a>
+      </div>
+      <div class="badge-row" style="margin-top:14px;">
+        <span class="pill pill-info">Patient Module</span>
+        <span class="pill pill-ok">Doctor Module</span>
+        <span class="pill pill-pending">Appointment Workflow</span>
+      </div>
+    </article>
+
+    <article class="card reveal delay-1">
+      <div class="visual-stack">
+        <div class="visual-surface">
+          <img src="{{ url_for('static', filename='img/manual_screenshots/dashboard_overview.png') }}" alt="JHIMS consultation dashboard preview">
+        </div>
+        <div class="grid-2">
+          <div class="card card-soft" style="padding:12px;">
+            <span class="pill pill-info">Patients</span>
+            <h3 style="margin:10px 0 7px;color:#0e3767;">Book and track online care</h3>
+            <p class="tiny" style="margin:0;">Search doctors by specialty, choose mode, and follow status with clear updates.</p>
+          </div>
+          <div class="card card-soft" style="padding:12px;">
+            <span class="pill pill-ok">Doctors</span>
+            <h3 style="margin:10px 0 7px;color:#0e3767;">Manage visits professionally</h3>
+            <p class="tiny" style="margin:0;">Confirm schedules, share links, message patients, and close consultations with notes.</p>
+          </div>
+        </div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <div>
+        <h2 class="page-title" style="font-size:1.75rem;margin-bottom:0;">Complete consultation workflow</h2>
+      </div>
+      <p class="subtitle" style="max-width:720px;">
+        Built to run the full online visit lifecycle from account onboarding to completed encounter documentation.
+      </p>
+    </div>
+
+    <div class="feature-grid">
+      <article class="feature-tile reveal">
+        <div class="feature-icon">01</div>
+        <h3>Role-Based Access</h3>
+        <p class="tiny">Separate patient and doctor accounts with secure session handling and protected dashboards.</p>
+      </article>
+      <article class="feature-tile reveal delay-1">
+        <div class="feature-icon">02</div>
+        <h3>Doctor Discovery</h3>
+        <p class="tiny">Patients search doctors by specialty and review profile bio, availability, and consultation fee.</p>
+      </article>
+      <article class="feature-tile reveal delay-2">
+        <div class="feature-icon">03</div>
+        <h3>Smart Booking</h3>
+        <p class="tiny">Patients book date, time, mode, reason, and symptoms for structured consultation requests.</p>
+      </article>
+      <article class="feature-tile reveal">
+        <div class="feature-icon">04</div>
+        <h3>Status Lifecycle</h3>
+        <p class="tiny">Requested, confirmed, rescheduled, cancelled, and completed states keep both sides informed.</p>
+      </article>
+      <article class="feature-tile reveal delay-1">
+        <div class="feature-icon">05</div>
+        <h3>Appointment Messaging</h3>
+        <p class="tiny">Each appointment has a dedicated conversation thread for pre-consult and follow-up details.</p>
+      </article>
+      <article class="feature-tile reveal delay-2">
+        <div class="feature-icon">06</div>
+        <h3>Clinical Closure</h3>
+        <p class="tiny">Doctors complete visits with diagnosis, treatment, notes, meeting links, and follow-up date.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell grid-3">
+    <article class="card reveal">
+      <span class="eyebrow">Patient Module</span>
+      <h2 class="page-title" style="font-size:1.34rem;margin-top:10px;">Patients can register and book in minutes</h2>
+      <p class="tiny" style="line-height:1.7;">
+        Create account, find doctor, submit booking request, track appointment status, and review completed notes.
+      </p>
+      <div class="badge-row" style="margin-top:12px;">
+        <a class="btn btn-primary" href="{{ url_for('consult_patient_signup') }}">Patient Signup</a>
+        <a class="btn btn-soft" href="{{ url_for('consult_patient_login') }}">Patient Login</a>
+      </div>
+    </article>
+
+    <article class="card reveal delay-1">
+      <span class="eyebrow">Doctor Module</span>
+      <h2 class="page-title" style="font-size:1.34rem;margin-top:10px;">Doctors handle requests and consultations</h2>
+      <p class="tiny" style="line-height:1.7;">
+        Publish profile, manage requests, accept or reschedule, add notes and prescriptions, and complete visits.
+      </p>
+      <div class="badge-row" style="margin-top:12px;">
+        <a class="btn btn-primary" href="{{ url_for('consult_doctor_signup') }}">Doctor Signup</a>
+        <a class="btn btn-soft" href="{{ url_for('consult_doctor_login') }}">Doctor Login</a>
+      </div>
+    </article>
+
+    <article class="card reveal delay-2">
+      <span class="eyebrow">Go Live</span>
+      <h2 class="page-title" style="font-size:1.34rem;margin-top:10px;">Ready for consultation.jhimssoftware.com</h2>
+      <p class="tiny" style="line-height:1.7;">
+        Deploy as a dedicated service with secure domain routing and scale it with your JHIMS rollout plan.
+      </p>
+      <div class="badge-row" style="margin-top:12px;">
+        <a class="btn btn-soft" href="{{ url_for('consultation_healthz') }}">Health Check</a>
+      </div>
+    </article>
+  </div>
+</section>
+{% endblock %}

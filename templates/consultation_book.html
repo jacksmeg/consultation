@@ -1,0 +1,53 @@
+{% extends "consultation_base.html" %}
+{% block title %}Book Consultation | JHIMS Consultation{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="shell grid-2">
+    <article class="card">
+      <span class="pill pill-info">{{ doctor.specialty }}</span>
+      <h1 class="page-title" style="font-size:1.45rem;margin-top:12px;">Book with {{ doctor.full_name }}</h1>
+      <p class="subtitle">{{ doctor.bio or "Professional consultation profile." }}</p>
+      <div style="margin-top:12px;display:grid;gap:6px;">
+        <p class="tiny" style="margin:0;">Fee: GHS {{ '%.2f'|format(doctor.consultation_fee or 0) }}</p>
+        <p class="tiny" style="margin:0;">Available Days: {{ doctor.available_days or 'Not specified' }}</p>
+        <p class="tiny" style="margin:0;">Available Hours: {{ doctor.available_hours or 'Not specified' }}</p>
+        <p class="tiny" style="margin:0;">Meeting Provider: {{ doctor.meeting_provider or 'Google Meet / Zoom / WhatsApp' }}</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2 class="page-title" style="font-size:1.35rem;">Appointment Request Form</h2>
+      <form method="post" class="form-grid" style="margin-top:12px;">
+        <div>
+          <label>Consultation Date</label>
+          <input class="input" type="date" name="scheduled_date" min="{{ min_date }}" required>
+        </div>
+        <div>
+          <label>Consultation Time</label>
+          <input class="input" type="time" name="scheduled_time" required>
+        </div>
+        <div class="form-wide">
+          <label>Consultation Mode</label>
+          <select class="input" name="visit_mode" required>
+            {% for mode in visit_modes %}
+              <option value="{{ mode }}">{{ mode }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-wide">
+          <label>Reason for Consultation</label>
+          <input class="input" name="reason" placeholder="Main reason for booking this consultation" required>
+        </div>
+        <div class="form-wide">
+          <label>Symptoms or Extra Notes</label>
+          <textarea class="input" name="symptoms" rows="4" placeholder="Share any symptoms, history, or preparation notes"></textarea>
+        </div>
+        <div class="form-wide badge-row">
+          <button class="btn btn-primary" type="submit">Submit Appointment Request</button>
+          <a class="btn btn-soft" href="{{ url_for('consult_doctor_directory') }}">Back to Directory</a>
+        </div>
+      </form>
+    </article>
+  </div>
+</section>
+{% endblock %}
