@@ -3,571 +3,157 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JHIMS Consultation | Smart Healthcare Dashboard</title>
-  <meta name="theme-color" content="#0e9f9b">
+  <title>JHIMS Consultation | Dashboard</title>
+  <meta name="theme-color" content="#0f8f95">
   <link rel="manifest" href="{{ url_for('consultation_manifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='jhims_logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
   <style>
-    :root{
-      --bg:#edf4fd;
-      --ink:#0f2756;
-      --muted:#5f7392;
-      --line:#dce8f8;
-      --sidebar-start:#06224c;
-      --sidebar-end:#031635;
-      --panel:#ffffff;
-      --topbar:#04224f;
-      --teal:#0e9f9b;
-      --teal-2:#17b8a3;
-      --blue:#1f72dd;
-      --soft-blue:#edf5ff;
-      --success:#0f9d76;
-      --warning:#d9981d;
-      --radius:16px;
-      --shadow:0 16px 30px rgba(9,38,82,.12);
-    }
-
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family:"Manrope","Segoe UI",sans-serif;
-      color:var(--ink);
-      background:linear-gradient(180deg,#f3f8ff 0%, #e9f2ff 100%);
-    }
-
+    :root{--bg:#edf3fc;--ink:#0f2f5f;--muted:#5b7498;--line:#d9e7f6;--nav:#06224f;--nav2:#0b366d;--side1:#04234f;--side2:#021434;--shadow:0 14px 28px rgba(5,34,78,.14);--radius:14px}
+    *{box-sizing:border-box} body{margin:0;font-family:"Manrope","Segoe UI",sans-serif;background:linear-gradient(180deg,#f7fbff,#edf4ff);color:var(--ink)}
     a{text-decoration:none;color:inherit}
-
-    .app-shell{
-      max-width:1380px;
-      margin:18px auto;
-      padding:0 14px;
-    }
-
-    .layout{
-      border-radius:22px;
-      overflow:hidden;
-      box-shadow:0 24px 45px rgba(8, 34, 78, .18);
-      background:#fff;
-      display:grid;
-      grid-template-columns:270px 1fr;
-      min-height:calc(100vh - 36px);
-    }
-
-    .sidebar{
-      background:linear-gradient(180deg,var(--sidebar-start) 0%, var(--sidebar-end) 100%);
-      color:#d6e7ff;
-      padding:20px 14px;
-      display:flex;
-      flex-direction:column;
-      gap:14px;
-    }
-
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      border-bottom:1px solid rgba(164,198,244,.2);
-      padding-bottom:14px;
-      margin-bottom:4px;
-    }
-
-    .brand-mark{
-      width:46px;
-      height:46px;
-      border-radius:12px;
-      background:rgba(255,255,255,.14);
-      border:1px solid rgba(171,206,250,.3);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      overflow:hidden;
-      flex:none;
-    }
-
-    .brand-mark img{width:100%;height:100%;object-fit:contain}
-
-    .brand h1{
-      margin:0;
-      font-size:1.05rem;
-      line-height:1.1;
-      color:#fff;
-      font-weight:800;
-      letter-spacing:.02em;
-    }
-
-    .brand p{
-      margin:3px 0 0;
-      font-size:.72rem;
-      color:#9cc0eb;
-      line-height:1.2;
-      font-weight:700;
-    }
-
-    .side-group{display:grid;gap:6px}
-
-    .side-label{
-      font-size:.73rem;
-      color:#7ca3d3;
-      font-weight:800;
-      text-transform:uppercase;
-      letter-spacing:.08em;
-      margin-top:8px;
-      padding:0 8px;
-    }
-
-    .side-link{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:10px 12px;
-      border-radius:12px;
-      color:#d5e7ff;
-      font-size:.88rem;
-      font-weight:700;
-      border:1px solid transparent;
-      transition:.18s ease;
-    }
-
-    .side-link:hover{background:rgba(72,156,255,.14);border-color:rgba(148,197,255,.25)}
-
-    .side-link.active{
-      background:linear-gradient(135deg,#0f9e9c,#0b6fb4);
-      color:#fff;
-      box-shadow:0 10px 20px rgba(0,0,0,.2);
-    }
-
-    .link-dot{
-      width:22px;
-      height:22px;
-      border-radius:8px;
-      background:rgba(255,255,255,.12);
-      border:1px solid rgba(174,208,249,.26);
-      font-size:.65rem;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-weight:800;
-      color:#d9ebff;
-      flex:none;
-    }
-
-    .support{
-      margin-top:auto;
-      background:linear-gradient(135deg,rgba(20,170,170,.32),rgba(41,120,214,.32));
-      border:1px solid rgba(146,213,255,.28);
-      border-radius:14px;
-      padding:12px;
-      color:#d8f2ff;
-    }
-
-    .support strong{display:block;font-size:.95rem;color:#fff}
-    .support span{font-size:.78rem;color:#b9dcff}
-
+    .page{max-width:1450px;margin:14px auto;padding:0 12px}
+    .shell{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 28px);border-radius:22px;overflow:hidden;box-shadow:0 24px 42px rgba(6,31,69,.2);background:#fff}
+    .side{background:linear-gradient(180deg,var(--side1),var(--side2));color:#dbe8ff;padding:16px 12px;display:flex;flex-direction:column;gap:8px}
+    .brand{display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(146,183,232,.3);padding:6px 8px 14px;margin-bottom:5px}
+    .brand .logo{width:48px;height:48px;border-radius:12px;overflow:hidden;border:1px solid rgba(176,206,245,.35);background:rgba(255,255,255,.1)}
+    .brand img{width:100%;height:100%;object-fit:contain}
+    .brand h1{margin:0;color:#fff;font-size:1.35rem;line-height:1}
+    .brand p{margin:2px 0 0;font-size:.72rem;color:#97bbe7;font-weight:700}
+    .group{display:grid;gap:4px}
+    .label{margin:9px 8px 2px;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#79a2d8;font-weight:800}
+    .link{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:10px;border:1px solid transparent;color:#d5e5ff;font-weight:700;font-size:.87rem}
+    .link:hover{background:rgba(69,140,243,.15);border-color:rgba(132,181,241,.35)}
+    .link.active{background:linear-gradient(135deg,#0e9f99,#0d6bb5);color:#fff;box-shadow:0 10px 20px rgba(0,0,0,.2)}
+    .i{width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.12);border:1px solid rgba(167,199,239,.35);font-size:.73rem}
+    .help{margin-top:auto;padding:12px;border-radius:12px;border:1px solid rgba(144,208,242,.3);background:linear-gradient(135deg,rgba(21,160,155,.35),rgba(28,104,181,.35))}
+    .help strong{display:block;color:#fff;font-size:.95rem}
+    .help span{font-size:.78rem;color:#c6e8ff}
     .main{background:var(--bg);display:flex;flex-direction:column}
-
-    .topbar{
-      height:74px;
-      background:linear-gradient(90deg,#04224f 0%, #093167 100%);
-      color:#fff;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:0 22px;
-      border-bottom:1px solid rgba(164,198,244,.3);
-    }
-
-    .top-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-
-    .top-link{
-      padding:9px 13px;
-      font-size:.87rem;
-      font-weight:700;
-      border-radius:9px;
-      color:#c7dcfa;
-      border-bottom:2px solid transparent;
-      transition:.16s ease;
-    }
-
-    .top-link:hover{color:#fff;background:rgba(255,255,255,.09)}
-    .top-link.active{color:#fff;border-bottom-color:#27d6c6}
-
-    .user-box{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      font-size:.84rem;
-      font-weight:700;
-      color:#d7e9ff;
-    }
-
-    .avatar{
-      width:38px;
-      height:38px;
-      border-radius:50%;
-      overflow:hidden;
-      border:2px solid rgba(255,255,255,.35);
-      flex:none;
-    }
-
+    .top{background:linear-gradient(90deg,var(--nav),var(--nav2));padding:0 20px;min-height:78px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#fff}
+    .tabs{display:flex;gap:4px;flex-wrap:wrap}
+    .tab{padding:10px 12px;border-radius:9px;font-size:.87rem;font-weight:700;color:#c8dcf8;border-bottom:2px solid transparent}
+    .tab:hover{background:rgba(255,255,255,.11);color:#fff}.tab.active{color:#fff;border-bottom-color:#2ad5c6}
+    .who{display:flex;align-items:center;gap:10px;font-size:.82rem;font-weight:700;color:#d6e9ff}
+    .bell{position:relative;width:34px;height:34px;border-radius:999px;border:1px solid rgba(165,198,239,.35);display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08)}
+    .bell b{position:absolute;top:-4px;right:-3px;background:#f44b4b;color:#fff;min-width:16px;height:16px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:.64rem;border:2px solid #0b2f63}
+    .avatar{width:38px;height:38px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,.36);background:#fff}
     .avatar img{width:100%;height:100%;object-fit:cover}
-
-    .content{
-      padding:18px;
-      display:grid;
-      gap:14px;
-    }
-
-    .panel{
-      background:var(--panel);
-      border:1px solid var(--line);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      padding:14px;
-    }
-
-    .hero{
-      padding:0;
-      overflow:hidden;
-      position:relative;
-      background:linear-gradient(100deg,#f7fcff 0%, #e5f4ff 50%, #d8f1ff 100%);
-    }
-
-    .hero-grid{
-      display:grid;
-      grid-template-columns:1.1fr .9fr;
-      align-items:stretch;
-    }
-
-    .hero-copy{padding:18px 18px 16px 18px;display:grid;gap:11px}
-
-    .hero-title{
-      margin:0;
-      font-size:3rem;
-      line-height:1.03;
-      font-weight:800;
-      color:#153669;
-      letter-spacing:-.03em;
-    }
-
-    .hero-title span{color:#16a1b2}
-
-    .hero-sub{margin:0;font-size:1rem;line-height:1.55;color:#58739a;max-width:650px}
-
-    .module-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-
-    .module-chip{
-      border:1px solid #d5e6f6;
-      border-radius:12px;
-      background:#fff;
-      padding:10px;
-      display:flex;
-      align-items:center;
-      gap:10px;
-    }
-
-    .module-chip h3{margin:0 0 2px;font-size:.95rem;color:#13406f}
-    .module-chip p{margin:0;font-size:.78rem;color:#5d7898;line-height:1.35}
-
-    .chip-icon{
-      width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
-      font-size:.85rem;font-weight:800;color:#fff;flex:none;
-      background:linear-gradient(135deg,#0f9f9b,#1f79dd);
-    }
-
-    .hero-visual{
-      position:relative;
-      display:flex;
-      align-items:flex-end;
-      justify-content:center;
-      padding:8px 10px 0;
-    }
-
-    .hero-visual img{max-height:240px;object-fit:contain}
-
-    .hero-note{
-      position:absolute;
-      right:16px;
-      top:20px;
-      background:rgba(255,255,255,.9);
-      border:1px solid #d8ebfa;
-      border-radius:14px;
-      padding:10px 12px;
-      max-width:220px;
-      font-size:.8rem;
-      color:#40658c;
-      box-shadow:0 10px 20px rgba(32,98,160,.1);
-    }
-
-    .hero-note strong{display:block;color:#164276;font-size:.9rem}
-
-    .grid-3{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px}
-    .grid-3b{display:grid;grid-template-columns:1.3fr .9fr 1.1fr;gap:12px}
-
-    .panel h2{
-      margin:0 0 10px;
-      font-size:1.25rem;
-      color:#123764;
-      letter-spacing:-.015em;
-    }
-
-    .quick-icons{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-
-    .quick-card{
-      border:1px solid #d9e8f7;
-      border-radius:12px;
-      background:#f8fbff;
-      padding:10px 6px;
-      text-align:center;
-      display:grid;
-      gap:6px;
-      color:#3f6188;
-      font-size:.77rem;
-      font-weight:700;
-    }
-
-    .quick-badge{
-      width:34px;height:34px;border-radius:10px;background:#e6f4ff;color:#1262b2;
-      border:1px solid #c8e2fb;display:flex;align-items:center;justify-content:center;
-      font-size:.78rem;font-weight:800;margin:0 auto;
-    }
-
-    .hint-line{
-      margin-top:12px;
-      padding-top:10px;
-      border-top:1px dashed #d5e5f5;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:8px;
-      flex-wrap:wrap;
-      color:#58739a;
-      font-size:.82rem;
-      font-weight:700;
-    }
-
-    .schedule-list{display:grid;gap:8px}
-
-    .schedule-row{
-      border:1px solid #d9e8f7;
-      border-radius:10px;
-      padding:8px;
-      display:grid;
-      grid-template-columns:80px 1fr auto;
-      gap:8px;
-      align-items:center;
-      background:#f9fcff;
-    }
-
-    .schedule-time{font-weight:800;color:#0f3c72;font-size:.82rem}
-    .schedule-main strong{display:block;font-size:.85rem;color:#123764}
-    .schedule-main span{display:block;font-size:.75rem;color:#607d9e}
-
-    .status-pill{
-      padding:5px 9px;
-      border-radius:999px;
-      font-size:.7rem;
-      font-weight:800;
-      text-transform:uppercase;
-    }
-
-    .status-confirmed{background:#dcfce7;color:#11744f}
-    .status-requested{background:#fef3c7;color:#945d00}
-    .status-rescheduled{background:#dbeafe;color:#1e4eb7}
-    .status-cancelled{background:#fee2e2;color:#b42318}
-    .status-completed{background:#e8f2ff;color:#355b95}
-
-    .book-form{display:grid;gap:8px}
-
-    .form-label{font-size:.72rem;font-weight:800;color:#5a789a;text-transform:uppercase;letter-spacing:.07em}
-
-    .input, .select, .textarea{
-      width:100%;
-      border:1px solid #cadff3;
-      background:#fff;
-      color:#123764;
-      border-radius:10px;
-      padding:9px;
-      font:inherit;
-      font-size:.85rem;
-    }
-
-    .textarea{min-height:64px;resize:vertical}
-
-    .btn{
-      border:none;
-      border-radius:10px;
-      padding:10px 12px;
-      font-size:.85rem;
-      font-weight:800;
-      cursor:pointer;
-      text-align:center;
-      transition:.16s ease;
-    }
-
-    .btn-primary{background:linear-gradient(135deg,#0f9f9b,#1f79dd);color:#fff;box-shadow:0 10px 18px rgba(19,118,186,.25)}
-    .btn-primary:hover{transform:translateY(-1px)}
-    .btn-soft{background:#f1f7ff;border:1px solid #d4e5f6;color:#204d86}
-    .btn-soft:hover{background:#e8f2ff}
-
-    .table-wrap{overflow:auto;border:1px solid #deebf8;border-radius:12px;background:#fff}
-
-    table{width:100%;border-collapse:collapse;min-width:560px}
-
-    th,td{padding:9px 8px;border-bottom:1px solid #e5effa;text-align:left;font-size:.8rem;vertical-align:top}
-    th{background:#f5faff;color:#5a7597;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em}
-
-    .timeline{display:grid;gap:10px}
-
-    .t-item{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start}
-    .t-dot{width:22px;height:22px;border-radius:999px;border:2px solid #bfd7ee;background:#eef6ff;display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#4e77a3;font-weight:800}
-    .t-dot.active{background:#ddf9ee;border-color:#9ce9cb;color:#11744f}
-    .t-main strong{display:block;color:#143c6c;font-size:.84rem}
-    .t-main span{display:block;color:#6a84a3;font-size:.75rem}
-
-    .overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-
-    .stat-card{
-      border:1px solid #dce8f8;
-      border-radius:12px;
-      padding:10px;
-      display:grid;
-      grid-template-columns:32px 1fr;
-      gap:8px;
-      align-items:center;
-      background:#fff;
-    }
-
-    .stat-icon{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:800;background:#edf5ff;color:#1f72dd}
-    .stat-main strong{display:block;font-size:1.3rem;color:#123764;line-height:1}
-    .stat-main span{display:block;font-size:.74rem;color:#5f7795;font-weight:700}
-
-    .flash-stack{display:grid;gap:8px}
-    .flash{padding:10px 12px;border-radius:10px;font-size:.82rem;font-weight:800;border:1px solid transparent}
-    .flash-success{background:#dcfce7;color:#14532d;border-color:#bbf7d0}
-    .flash-danger{background:#fee2e2;color:#991b1b;border-color:#fecaca}
-    .flash-warning{background:#fef3c7;color:#92400e;border-color:#fde68a}
-    .flash-info{background:#dbeafe;color:#1e3a8a;border-color:#bfdbfe}
-
-    .footer{
-      text-align:center;
-      color:#6a84a3;
-      font-size:.75rem;
-      padding-top:4px;
-      font-weight:700;
-    }
-
-    @media (max-width:1260px){
-      .layout{grid-template-columns:236px 1fr}
-      .quick-icons{grid-template-columns:repeat(3,minmax(0,1fr))}
-    }
-
-    @media (max-width:1120px){
-      .layout{grid-template-columns:1fr}
-      .sidebar{display:none}
-      .grid-3,.grid-3b,.hero-grid{grid-template-columns:1fr}
-      .topbar{height:auto;padding:12px;gap:10px;flex-wrap:wrap;justify-content:center}
-      .top-nav{justify-content:center}
-    }
-
-    @media (max-width:760px){
-      .app-shell{margin:10px auto;padding:0 8px}
-      .content{padding:10px}
-      .hero-title{font-size:2.15rem}
-      .module-row,.overview-grid{grid-template-columns:1fr}
-      .quick-icons{grid-template-columns:repeat(2,minmax(0,1fr))}
-    }
+    .x{width:34px;height:34px;border-radius:999px;border:1px solid rgba(255,255,255,.36);display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08)}
+    .content{padding:16px;display:grid;gap:12px}
+    .flash-list{display:grid;gap:8px}.flash{padding:9px 11px;border-radius:10px;font-size:.82rem;font-weight:800}.flash-success{background:#dcfce7;color:#14532d}.flash-danger{background:#fee2e2;color:#991b1b}.flash-warning{background:#fef3c7;color:#92400e}.flash-info{background:#dbeafe;color:#1e3a8a}
+    .card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px}
+    .hero{padding:0;overflow:hidden;background:linear-gradient(102deg,#f9fdff,#e8f5ff 48%,#def2ff)}
+    .hero-grid{display:grid;grid-template-columns:1.1fr .9fr;min-height:238px}
+    .hero-l{padding:18px;display:grid;gap:10px;align-content:start}
+    .hero h1{margin:0;font-size:3.2rem;line-height:1.02;letter-spacing:-.03em;color:#113265}
+    .hero h1 span{color:#15a4b6}.hero p{margin:0;max-width:630px;color:#577499;font-size:1rem;line-height:1.52;font-weight:600}
+    .chips{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .chip{background:#fff;border:1px solid #d8e8f7;border-radius:12px;padding:10px;display:grid;grid-template-columns:35px 1fr 15px;gap:8px;align-items:center}
+    .chip .ci{width:35px;height:35px;border-radius:10px;background:linear-gradient(135deg,#0f9f9b,#2a7ade);color:#fff;display:flex;align-items:center;justify-content:center}
+    .chip h3{margin:0;font-size:.92rem;color:#13406f}.chip p{margin:2px 0 0;font-size:.75rem;color:#5e7898;line-height:1.3}
+    .hero-r{position:relative;display:flex;align-items:flex-end;justify-content:center;padding:8px 10px 0}
+    .hero-r img{max-height:230px;object-fit:contain}
+    .note{position:absolute;right:14px;top:16px;width:236px;padding:10px;border-radius:13px;background:rgba(255,255,255,.95);border:1px solid #d8e9f9;display:grid;grid-template-columns:32px 1fr;gap:8px;box-shadow:0 10px 20px rgba(24,92,163,.13)}
+    .note .n{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(140deg,#18b28e,#1b7dcb)}
+    .note strong{display:block;font-size:.9rem;color:#184779}.note span{font-size:.76rem;color:#57789b}
+    .row-a{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px}
+    .row-b{display:grid;grid-template-columns:1.3fr .92fr 1.1fr;gap:12px}
+    .card h2{margin:0 0 10px;font-size:1.18rem;color:#123764}
+    .quick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+    .q{border:1px solid #d9e8f7;border-radius:12px;background:#f8fbff;text-align:center;padding:10px 6px;display:grid;gap:6px;color:#49688f;font-size:.77rem;font-weight:800}
+    .q i{width:33px;height:33px;margin:0 auto;border-radius:10px;background:#eaf4ff;border:1px solid #cee3f8;color:#1d68ba;display:flex;align-items:center;justify-content:center}
+    .line{margin-top:12px;padding-top:9px;border-top:1px dashed #d4e4f5;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.82rem;font-weight:700;color:#5f789a}
+    .line a{color:#1f72dd;font-weight:800}.line strong{color:#d13838}
+    .scheds{display:grid;gap:8px}
+    .s{border:1px solid #d9e8f7;border-radius:10px;background:#f9fcff;display:grid;grid-template-columns:86px 1fr auto;gap:8px;align-items:center;padding:8px}
+    .st{font-size:.79rem;font-weight:800;color:#0e3a71}.sm strong{display:block;font-size:.84rem;color:#133b6a}.sm span{display:block;font-size:.75rem;color:#617e9f}
+    .badge{border-radius:999px;font-size:.69rem;font-weight:800;text-transform:uppercase;padding:5px 9px;white-space:nowrap}
+    .confirmed{background:#dcfce7;color:#11744f}.requested{background:#fef3c7;color:#8f5a00}.rescheduled{background:#dbeafe;color:#1e4eb7}.progress{background:#e0ecff;color:#2754a6}.completed{background:#e8f2ff;color:#355b95}
+    .book{display:grid;gap:8px}.l{font-size:.72rem;color:#58759a;text-transform:uppercase;letter-spacing:.07em;font-weight:800}
+    .input,.select,.textarea{width:100%;border:1px solid #cbdef2;border-radius:10px;padding:9px;font:inherit;font-size:.85rem;color:#143a68;background:#fff}.textarea{min-height:64px;resize:vertical}
+    .btn{border:none;border-radius:10px;padding:10px 12px;font-size:.85rem;font-weight:800;display:inline-flex;gap:6px;justify-content:center;align-items:center;cursor:pointer}
+    .btn-main{background:linear-gradient(135deg,#0f9f9b,#1f79dd);color:#fff;box-shadow:0 10px 18px rgba(19,118,186,.25)} .btn-soft{background:#f1f7ff;border:1px solid #d4e5f6;color:#204d86}
+    .cta{text-align:center;color:#1f72dd;font-size:.8rem;font-weight:800}
+    .table{border:1px solid #deebf8;border-radius:12px;background:#fff;overflow:auto}
+    table{width:100%;border-collapse:collapse;min-width:560px} th,td{border-bottom:1px solid #e6effa;padding:9px 8px;text-align:left;font-size:.79rem} th{background:#f5faff;color:#5d7798;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em}
+    .timeline{display:grid;gap:10px}.step{display:grid;grid-template-columns:22px 1fr;gap:8px}
+    .dot{width:22px;height:22px;border-radius:999px;border:2px solid #bfd7ee;background:#eef6ff;color:#4d77a3;font-size:.66rem;font-weight:800;display:flex;align-items:center;justify-content:center}.dot.active{border-color:#9de9cd;background:#ddf9ee;color:#12764f}
+    .step strong{display:block;font-size:.84rem;color:#143d6e}.step span{display:block;font-size:.75rem;color:#6a84a3}
+    .ov{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .m{border:1px solid #dce8f8;border-radius:12px;background:#fff;padding:10px;display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center}
+    .m i{width:34px;height:34px;border-radius:10px;background:#edf5ff;color:#1f72dd;display:flex;align-items:center;justify-content:center}
+    .m strong{display:block;font-size:1.3rem;color:#123764;line-height:1}.m span{display:block;font-size:.74rem;color:#5f7795;font-weight:700}
+    .footer{text-align:center;color:#6c85a3;font-size:.75rem;font-weight:700;padding-top:4px}.links{margin-top:3px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap;color:#7a93b1;font-size:.73rem}
+    @media (max-width:1320px){.quick{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media (max-width:1160px){.shell{grid-template-columns:1fr}.side{display:none}.hero-grid,.row-a,.row-b{grid-template-columns:1fr}.top{padding:10px 12px;justify-content:center}.hero h1{font-size:2.5rem}}
+    @media (max-width:760px){.page{margin:8px auto;padding:0 8px}.content{padding:10px}.tabs{justify-content:center}.chips,.ov{grid-template-columns:1fr}.quick{grid-template-columns:repeat(2,minmax(0,1fr))}.hero h1{font-size:2rem}.note{position:static;width:auto;margin:0 10px 10px}}
   </style>
 </head>
 <body>
-  <div class="app-shell">
-    <div class="layout">
-      <aside class="sidebar">
+  <div class="page">
+    <div class="shell">
+      <aside class="side">
         <a class="brand" href="{{ url_for('consultation_home') }}">
-          <span class="brand-mark"><img src="{{ url_for('static', filename='jhims_logo.png') }}" alt="JHIMS"></span>
-          <span>
-            <h1>JHIMS Consultation</h1>
-            <p>Connected Care. Better Outcomes.</p>
-          </span>
+          <span class="logo"><img src="{{ url_for('static', filename='jhims_logo.png') }}" alt="JHIMS"></span>
+          <span><h1>JHIMS</h1><p>Consultation<br>Connected Care. Better Outcomes.</p></span>
         </a>
-
-        <div class="side-group">
-          <a class="side-link active" href="{{ url_for('consultation_home') }}"><span class="link-dot">HM</span>Dashboard</a>
+        <div class="group"><a class="link active" href="{{ url_for('consultation_home') }}"><span class="i"><i class="fa-solid fa-house"></i></span>Dashboard</a></div>
+        <div class="group">
+          <div class="label">Patient</div>
+          <a class="link" href="{{ url_for('consult_patient_dashboard') if current_patient else url_for('consult_patient_login', next=url_for('consult_patient_dashboard')) }}"><span class="i"><i class="fa-regular fa-calendar-check"></i></span>My Appointments</a>
+          <a class="link" href="{{ url_for('consult_doctor_directory') if current_patient else url_for('consult_patient_login', next=url_for('consult_doctor_directory')) }}"><span class="i"><i class="fa-solid fa-user-doctor"></i></span>Find Doctors</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='medical-records') }}"><span class="i"><i class="fa-regular fa-folder-open"></i></span>Medical Records</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="i"><i class="fa-solid fa-pills"></i></span>e-Prescriptions</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='lab-results') }}"><span class="i"><i class="fa-solid fa-vial-circle-check"></i></span>Lab Results</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='payments') }}"><span class="i"><i class="fa-regular fa-credit-card"></i></span>Payments</a>
         </div>
-
-        <div class="side-group">
-          <div class="side-label">Patient</div>
-          <a class="side-link" href="{{ url_for('consult_patient_dashboard') if current_patient else url_for('consult_patient_login', next=url_for('consult_patient_dashboard')) }}"><span class="link-dot">AP</span>My Appointments</a>
-          <a class="side-link" href="{{ url_for('consult_doctor_directory') if current_patient else url_for('consult_patient_login', next=url_for('consult_doctor_directory')) }}"><span class="link-dot">FD</span>Find Doctors</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='medical-records') }}"><span class="link-dot">MR</span>Medical Records</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="link-dot">EP</span>e-Prescriptions</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='lab-results') }}"><span class="link-dot">LB</span>Lab Results</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='payments') }}"><span class="link-dot">PM</span>Payments</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='mobile-pwa') }}"><span class="link-dot">MW</span>Mobile App</a>
+        <div class="group">
+          <div class="label">Doctor</div>
+          <a class="link" href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}"><span class="i"><i class="fa-regular fa-clock"></i></span>My Schedule</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='patients') }}"><span class="i"><i class="fa-solid fa-users"></i></span>Patients</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='consultations') }}"><span class="i"><i class="fa-solid fa-stethoscope"></i></span>Consultations</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="i"><i class="fa-solid fa-file-prescription"></i></span>e-Prescriptions</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='reports') }}"><span class="i"><i class="fa-solid fa-chart-column"></i></span>Reports</a>
         </div>
-
-        <div class="side-group">
-          <div class="side-label">Doctor</div>
-          <a class="side-link" href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}"><span class="link-dot">SC</span>My Schedule</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='patients') }}"><span class="link-dot">PT</span>Patients</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='consultations') }}"><span class="link-dot">CS</span>Consultations</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='video-room') }}"><span class="link-dot">VC</span>Video Room</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="link-dot">RX</span>e-Prescriptions</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='availability') }}"><span class="link-dot">AV</span>Availability</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='reports') }}"><span class="link-dot">RP</span>Reports</a>
+        <div class="group">
+          <div class="label">Admin</div>
+          <a class="link" href="{{ url_for('consult_module_page', slug='users-roles') }}"><span class="i"><i class="fa-solid fa-user-shield"></i></span>Users & Roles</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='departments') }}"><span class="i"><i class="fa-solid fa-building-user"></i></span>Departments</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='settings') }}"><span class="i"><i class="fa-solid fa-gear"></i></span>System Settings</a>
+          <a class="link" href="{{ url_for('consult_module_page', slug='audit-logs') }}"><span class="i"><i class="fa-solid fa-clipboard-list"></i></span>Audit Logs</a>
         </div>
-
-        <div class="side-group">
-          <div class="side-label">Admin</div>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='users-roles') }}"><span class="link-dot">UR</span>Users & Roles</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='departments') }}"><span class="link-dot">DP</span>Departments</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='admin-control') }}"><span class="link-dot">AC</span>Admin Control</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='notifications') }}"><span class="link-dot">NT</span>Notifications</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='analytics-pro') }}"><span class="link-dot">AN</span>Analytics Pro</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='settings') }}"><span class="link-dot">ST</span>System Settings</a>
-          <a class="side-link" href="{{ url_for('consult_module_page', slug='audit-logs') }}"><span class="link-dot">AL</span>Audit Logs</a>
-        </div>
-
-        <div class="support">
-          <strong>Need Help?</strong>
-          <span>Contact support: 050 805 0007</span>
-        </div>
+        <div class="help"><strong><i class="fa-solid fa-headset"></i> Need Help?</strong><span>Contact Support: 050 805 0007</span></div>
       </aside>
-
-      <section class="main">
-        <header class="topbar">
-          <nav class="top-nav">
-            <a class="top-link active" href="{{ url_for('consultation_home') }}">Dashboard</a>
-            <a class="top-link" href="{{ url_for('consult_module_page', slug='consultations') }}">Consultation</a>
-            <a class="top-link" href="{{ url_for('consult_module_page', slug='video-room') }}">Video Room</a>
-            <a class="top-link" href="{{ url_for('consult_patient_dashboard') if current_patient else url_for('consult_patient_login', next=url_for('consult_patient_dashboard')) }}">Patient Portal</a>
-            <a class="top-link" href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}">Doctor Portal</a>
-            <a class="top-link" href="{{ url_for('consult_module_page', slug='reports') }}">Reports</a>
-            <a class="top-link" href="{{ url_for('consult_module_page', slug='billing') }}">Billing</a>
-            <a class="top-link" href="{{ url_for('consult_module_page', slug='analytics-pro') }}">Analytics Pro</a>
-            <a class="top-link" href="{{ url_for('consult_module_page', slug='settings') }}">Settings</a>
+      <main class="main">
+        <header class="top">
+          <nav class="tabs">
+            <a class="tab active" href="{{ url_for('consultation_home') }}">Dashboard</a>
+            <a class="tab" href="{{ url_for('consult_module_page', slug='consultations') }}">Consultation</a>
+            <a class="tab" href="{{ url_for('consult_patient_dashboard') if current_patient else url_for('consult_patient_login', next=url_for('consult_patient_dashboard')) }}">Patient Portal</a>
+            <a class="tab" href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}">Doctor Portal</a>
+            <a class="tab" href="{{ url_for('consult_module_page', slug='reports') }}">Reports</a>
+            <a class="tab" href="{{ url_for('consult_module_page', slug='billing') }}">Billing</a>
+            <a class="tab" href="{{ url_for('consult_module_page', slug='settings') }}">Settings</a>
           </nav>
-
-          <div class="user-box">
+          <div class="who">
+            <span class="bell"><i class="fa-regular fa-bell"></i><b>3</b></span>
+            <span class="avatar"><img src="{{ url_for('static', filename='img/consultation_doctor.png') }}" alt="Profile"></span>
             <span>
-              {% if current_doctor %}
-                Dr. {{ current_doctor.full_name }}<br><small style="font-size:.72rem;color:#9ec0ea;">Doctor Account</small>
-              {% elif current_patient %}
-                {{ current_patient.full_name }}<br><small style="font-size:.72rem;color:#9ec0ea;">Patient Account</small>
-              {% else %}
-                Consultation Admin<br><small style="font-size:.72rem;color:#9ec0ea;">Super Admin View</small>
-              {% endif %}
+              {% if current_doctor %}Dr. {{ current_doctor.full_name }}<br><small style="color:#9ec0ea;font-size:.72rem;">Doctor Account</small>
+              {% elif current_patient %}{{ current_patient.full_name }}<br><small style="color:#9ec0ea;font-size:.72rem;">Patient Account</small>
+              {% else %}Dr. Jackson Okyere<br><small style="color:#9ec0ea;font-size:.72rem;">Super Admin</small>{% endif %}
             </span>
-            <span class="avatar"><img src="{{ url_for('static', filename='img/consultation_doctor.png') }}" alt="User"></span>
+            <span class="x"><i class="fa-solid fa-xmark"></i></span>
           </div>
         </header>
-
-        <div class="content">
+        <section class="content">
           {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-              <div class="flash-stack">
+              <div class="flash-list">
                 {% for category, message in messages %}
                   {% set mapped = 'info' %}
                   {% if category in ['danger','error'] %}{% set mapped = 'danger' %}{% endif %}
@@ -579,127 +165,111 @@
             {% endif %}
           {% endwith %}
 
-          <article class="panel hero">
+          <article class="card hero">
             <div class="hero-grid">
-              <div class="hero-copy">
-                <h1 class="hero-title">Smart Healthcare.<br>Seamless <span>Consultations.</span></h1>
-                <p class="hero-sub">Experience connected, secure, and efficient telemedicine for better patient outcomes with one integrated JHIMS consultation workspace.</p>
-                <div class="module-row">
-                  <div class="module-chip">
-                    <span class="chip-icon">PT</span>
-                    <div>
-                      <h3>Patient Module</h3>
-                      <p>Book appointments, consult doctors, and access your health records.</p>
-                    </div>
+              <div class="hero-l">
+                <h1>Smart Healthcare.<br>Seamless <span>Consultations.</span></h1>
+                <p>Experience connected, secure, and efficient telemedicine for better patient outcomes with one professional JHIMS consultation workspace.</p>
+                <div class="chips">
+                  <div class="chip">
+                    <span class="ci"><i class="fa-solid fa-user-group"></i></span>
+                    <span><h3>Patient Module</h3><p>Book appointments, consult doctors, and access your health records.</p></span>
+                    <span><i class="fa-solid fa-chevron-right"></i></span>
                   </div>
-                  <div class="module-chip">
-                    <span class="chip-icon">DR</span>
-                    <div>
-                      <h3>Doctor Module</h3>
-                      <p>Manage consultations, patients, and your daily consultation schedule.</p>
-                    </div>
+                  <div class="chip">
+                    <span class="ci"><i class="fa-solid fa-user-doctor"></i></span>
+                    <span><h3>Doctor Module</h3><p>Manage consultations, patient flow, notes, and your schedule.</p></span>
+                    <span><i class="fa-solid fa-chevron-right"></i></span>
                   </div>
                 </div>
               </div>
-              <div class="hero-visual">
-                <img src="{{ url_for('static', filename='img/consultation_doctor.png') }}" alt="Doctor online consultation">
-                <div class="hero-note">
-                  <strong>Trusted Care Layer</strong>
-                  Secure consultations, private records, and reliable follow-up management.
+              <div class="hero-r">
+                <img src="{{ url_for('static', filename='img/consultation_doctor.png') }}" alt="Doctor">
+                <div class="note">
+                  <span class="n"><i class="fa-solid fa-shield-heart"></i></span>
+                  <span><strong>We're here for you</strong><span>Secure. Private. Reliable. Your health, our priority.</span></span>
                 </div>
               </div>
             </div>
           </article>
 
-          <div class="grid-3">
-            <article class="panel">
+          <div class="row-a">
+            <article class="card">
               <h2>Patient Quick Actions</h2>
-              <div class="quick-icons">
-                <a class="quick-card" href="{{ url_for('consult_doctor_directory') if current_patient else url_for('consult_patient_login', next=url_for('consult_doctor_directory')) }}"><span class="quick-badge">BK</span>Book Appointment</a>
-                <a class="quick-card" href="{{ url_for('consult_doctor_directory') if current_patient else url_for('consult_patient_login', next=url_for('consult_doctor_directory')) }}"><span class="quick-badge">FD</span>Find Doctors</a>
-                <a class="quick-card" href="{{ url_for('consult_module_page', slug='lab-results') }}"><span class="quick-badge">UP</span>Upload Reports</a>
-                <a class="quick-card" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="quick-badge">RX</span>View Prescriptions</a>
-                <a class="quick-card" href="{{ url_for('consult_module_page', slug='payments') }}"><span class="quick-badge">PY</span>Make Payment</a>
+              <div class="quick">
+                <a class="q" href="{{ url_for('consult_doctor_directory') if current_patient else url_for('consult_patient_login', next=url_for('consult_doctor_directory')) }}"><i class="fa-regular fa-calendar-check"></i>Book Appointment</a>
+                <a class="q" href="{{ url_for('consult_doctor_directory') if current_patient else url_for('consult_patient_login', next=url_for('consult_doctor_directory')) }}"><i class="fa-solid fa-user-doctor"></i>Find Doctors</a>
+                <a class="q" href="{{ url_for('consult_module_page', slug='lab-results') }}"><i class="fa-solid fa-upload"></i>Upload Reports</a>
+                <a class="q" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><i class="fa-solid fa-file-prescription"></i>View Prescriptions</a>
+                <a class="q" href="{{ url_for('consult_module_page', slug='payments') }}"><i class="fa-regular fa-credit-card"></i>Make Payment</a>
               </div>
-              <div class="hint-line">
-                <span>Need emergency help? <strong style="color:#d92d20;">050 805 0007</strong></span>
-                <a href="{{ url_for('consult_module_page', slug='consultations') }}" style="color:#1f72dd;font-weight:800;">View all services</a>
+              <div class="line">
+                <span>Need emergency help? <strong>050 805 0007</strong></span>
+                <a href="{{ url_for('consult_module_page', slug='consultations') }}">View all services <i class="fa-solid fa-arrow-right-long"></i></a>
               </div>
             </article>
 
-            <article class="panel">
-              <h2>Doctor's Schedule <small style="font-size:.72rem;color:#6a84a3;font-weight:700;">{{ today_date|fmt_date }}</small></h2>
-              <div class="schedule-list">
+            <article class="card">
+              <h2>Doctor's Schedule <small style="font-size:.72rem;color:#6883a3;font-weight:700;">{{ today_date|fmt_date }}</small></h2>
+              <div class="scheds">
                 {% for row in schedule_rows %}
-                  <div class="schedule-row">
-                    <div class="schedule-time">{{ row.scheduled_for|fmt_dt }}</div>
-                    <div class="schedule-main">
-                      <strong>{{ row.patient_name }}</strong>
-                      <span>Consultation Session</span>
-                    </div>
-                    <span class="status-pill {% if row.status == 'Confirmed' %}status-confirmed{% elif row.status == 'Reschedule Requested' %}status-rescheduled{% else %}status-requested{% endif %}">{{ row.status }}</span>
+                  <div class="s">
+                    <div class="st">{{ row.scheduled_for|fmt_dt }}</div>
+                    <div class="sm"><strong>{{ row.patient_name }}</strong><span>Consultation Session</span></div>
+                    <span class="badge {% if row.status == 'Confirmed' %}confirmed{% elif row.status == 'Reschedule Requested' %}rescheduled{% elif row.status == 'In Progress' %}progress{% else %}requested{% endif %}">{{ row.status }}</span>
                   </div>
                 {% else %}
-                  <div class="schedule-row">
-                    <div class="schedule-time">--</div>
-                    <div class="schedule-main"><strong>No active schedule</strong><span>New bookings will appear here.</span></div>
-                    <span class="status-pill status-completed">Empty</span>
-                  </div>
+                  <div class="s"><div class="st">--</div><div class="sm"><strong>No active schedule</strong><span>New bookings will appear here.</span></div><span class="badge completed">Empty</span></div>
                 {% endfor %}
               </div>
-              <div class="hint-line">
+              <div class="line">
                 <span>Doctor workflow synced with consultation statuses.</span>
-                <a href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}" style="color:#1f72dd;font-weight:800;">View full schedule</a>
+                <a href="{{ url_for('consult_doctor_dashboard') if current_doctor else url_for('consult_module_page', slug='consultations') }}">View full schedule <i class="fa-solid fa-arrow-right-long"></i></a>
               </div>
             </article>
 
-            <article class="panel">
-              <h2>Book New Appointment</h2>
+            <article class="card">
+              <h2><i class="fa-regular fa-calendar-plus"></i> Book New Appointment</h2>
               {% if current_patient %}
-                <form class="book-form" method="post" action="{{ url_for('consult_quick_book') }}">
-                  <label class="form-label" for="doctor_id">Select Doctor</label>
+                <form class="book" method="post" action="{{ url_for('consult_quick_book') }}">
+                  <label class="l" for="doctor_id">Select Doctor</label>
                   <select class="select" id="doctor_id" name="doctor_id" required>
                     <option value="">Choose doctor</option>
                     {% for doctor in quick_doctors %}
                       <option value="{{ doctor.id }}">{{ doctor.full_name }} - {{ doctor.specialty }}</option>
                     {% endfor %}
                   </select>
-
-                  <label class="form-label" for="scheduled_date">Select Date</label>
+                  <label class="l" for="scheduled_date">Select Date</label>
                   <input class="input" type="date" id="scheduled_date" name="scheduled_date" min="{{ today_date }}" required>
-
-                  <label class="form-label" for="scheduled_time">Select Time</label>
+                  <label class="l" for="scheduled_time">Select Time</label>
                   <input class="input" type="time" id="scheduled_time" name="scheduled_time" required>
-
-                  <label class="form-label" for="visit_mode">Consultation Mode</label>
+                  <label class="l" for="visit_mode">Consultation Mode</label>
                   <select class="select" id="visit_mode" name="visit_mode" required>
                     {% for mode in visit_modes %}
                       <option value="{{ mode }}">{{ mode }}</option>
                     {% endfor %}
                   </select>
-
-                  <label class="form-label" for="reason">Reason</label>
+                  <label class="l" for="reason">Reason</label>
                   <input class="input" type="text" id="reason" name="reason" placeholder="Primary reason for consultation" required>
-
-                  <label class="form-label" for="symptoms">Symptoms (optional)</label>
+                  <label class="l" for="symptoms">Symptoms (optional)</label>
                   <textarea class="textarea" id="symptoms" name="symptoms" placeholder="Describe symptoms or context"></textarea>
-
-                  <button class="btn btn-primary" type="submit">Book Appointment</button>
+                  <button class="btn btn-main" type="submit"><i class="fa-regular fa-calendar-check"></i>Book Appointment</button>
+                  <div class="cta"><i class="fa-solid fa-video"></i> Request Video Consultation</div>
                 </form>
               {% else %}
-                <div class="book-form">
-                  <p style="margin:0;color:#5f7694;font-size:.88rem;line-height:1.6;">Patient login is required before creating bookings from this quick panel.</p>
-                  <a class="btn btn-primary" href="{{ url_for('consult_patient_login', next=url_for('consultation_home')) }}">Patient Login to Continue</a>
-                  <a class="btn btn-soft" href="{{ url_for('consult_patient_signup') }}">Create Patient Account</a>
+                <div class="book">
+                  <p style="margin:0;color:#5f7694;font-size:.88rem;line-height:1.6;">Patient login is required before creating bookings from this panel.</p>
+                  <a class="btn btn-main" href="{{ url_for('consult_patient_login', next=url_for('consultation_home')) }}"><i class="fa-solid fa-right-to-bracket"></i>Patient Login</a>
+                  <a class="btn btn-soft" href="{{ url_for('consult_patient_signup') }}"><i class="fa-solid fa-user-plus"></i>Create Patient Account</a>
                 </div>
               {% endif %}
             </article>
           </div>
 
-          <div class="grid-3b">
-            <article class="panel">
+          <div class="row-b">
+            <article class="card">
               <h2>Upcoming Consultations</h2>
-              <div class="table-wrap">
+              <div class="table">
                 <table>
                   <thead>
                     <tr>
@@ -717,9 +287,7 @@
                         <td>{{ row.patient_name }}</td>
                         <td>{{ row.doctor_name }}</td>
                         <td>{{ row.visit_mode }}</td>
-                        <td>
-                          <span class="status-pill {% if row.status == 'Confirmed' %}status-confirmed{% elif row.status == 'Reschedule Requested' %}status-rescheduled{% else %}status-requested{% endif %}">{{ row.status }}</span>
-                        </td>
+                        <td><span class="badge {% if row.status == 'Confirmed' %}confirmed{% elif row.status == 'Reschedule Requested' %}rescheduled{% elif row.status == 'In Progress' %}progress{% else %}requested{% endif %}">{{ row.status }}</span></td>
                       </tr>
                     {% else %}
                       <tr><td colspan="5">No upcoming consultation records yet.</td></tr>
@@ -727,57 +295,49 @@
                   </tbody>
                 </table>
               </div>
+              <div class="line">
+                <span>Live booking feed from consultation workflow.</span>
+                <a href="{{ url_for('consult_patient_dashboard') if current_patient else url_for('consult_module_page', slug='consultations') }}">View all appointments <i class="fa-solid fa-arrow-right-long"></i></a>
+              </div>
             </article>
 
-            <article class="panel">
+            <article class="card">
               <h2>Consultation Status</h2>
               <div class="timeline">
                 {% for item in timeline %}
-                  <div class="t-item">
-                    <span class="t-dot {% if item.active %}active{% endif %}">{{ loop.index }}</span>
-                    <div class="t-main">
-                      <strong>{{ item.label }}</strong>
-                      <span>{% if item.stamp %}{{ item.stamp|fmt_dt }}{% else %}No record yet{% endif %}</span>
-                    </div>
+                  <div class="step">
+                    <span class="dot {% if item.active %}active{% endif %}">{{ loop.index }}</span>
+                    <span><strong>{{ item.label }}</strong><span>{% if item.stamp %}{{ item.stamp|fmt_dt }}{% else %}No record yet{% endif %}</span></span>
                   </div>
                 {% endfor %}
               </div>
             </article>
 
-            <article class="panel">
+            <article class="card">
               <h2>Today's Overview</h2>
-              <div class="overview-grid">
-                <div class="stat-card">
-                  <span class="stat-icon">AP</span>
-                  <div class="stat-main"><strong>{{ today_view.appointments }}</strong><span>Total Appointments</span></div>
-                </div>
-                <div class="stat-card">
-                  <span class="stat-icon">DR</span>
-                  <div class="stat-main"><strong>{{ today_view.active_doctors }}</strong><span>Active Doctors</span></div>
-                </div>
-                <div class="stat-card">
-                  <span class="stat-icon">CP</span>
-                  <div class="stat-main"><strong>{{ today_view.completed }}</strong><span>Completed Consults</span></div>
-                </div>
-                <div class="stat-card">
-                  <span class="stat-icon">RT</span>
-                  <div class="stat-main"><strong>{{ today_view.rating }}</strong><span>Patient Rating</span></div>
-                </div>
+              <div class="ov">
+                <div class="m"><i class="fa-regular fa-calendar-days"></i><span><strong>{{ today_view.appointments }}</strong><span>Total Appointments</span></span></div>
+                <div class="m"><i class="fa-solid fa-user-doctor"></i><span><strong>{{ today_view.active_doctors }}</strong><span>Active Doctors</span></span></div>
+                <div class="m"><i class="fa-solid fa-briefcase-medical"></i><span><strong>{{ today_view.completed }}</strong><span>Completed Consults</span></span></div>
+                <div class="m"><i class="fa-solid fa-star"></i><span><strong>{{ today_view.rating }}</strong><span>Patient Rating</span></span></div>
               </div>
-              <div class="hint-line">
+              <div class="line">
                 <span>{{ today_view.upcoming }} appointments currently in active workflow.</span>
-                <a href="{{ url_for('consult_module_page', slug='reports') }}" style="color:#1f72dd;font-weight:800;">Open reports</a>
+                <a href="{{ url_for('consult_module_page', slug='reports') }}">Open reports <i class="fa-solid fa-arrow-right-long"></i></a>
               </div>
             </article>
           </div>
 
-          <div class="footer">&copy; {{ current_year }} JHIMS Consultation. All rights reserved.</div>
-        </div>
-      </section>
+          <div class="footer">
+            &copy; {{ current_year }} JHIMS Consultation. All rights reserved.
+            <div class="links"><span>Privacy Policy</span><span>Terms of Use</span><span>Support</span></div>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
   <script>
-    (function () {
+    (function(){
       if (!("serviceWorker" in navigator)) return;
       navigator.serviceWorker.register("{{ url_for('consultation_service_worker') }}").catch(function(){});
     })();
