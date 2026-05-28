@@ -2581,30 +2581,422 @@ def consult_doctor_change_password():
 @app.route("/consultation/patient/dashboard")
 @patient_required
 def consult_patient_dashboard():
-    patient = current_patient()
+    patient = dict(current_patient())
     conn = get_db()
     appointments = conn.execute(
-        """SELECT a.*, d.full_name AS doctor_name, d.specialty, d.consultation_fee
+        """SELECT a.*, d.full_name AS doctor_name, d.specialty, d.consultation_fee, d.meeting_provider
            FROM consult_appointments a
            JOIN consult_doctors d ON d.id=a.doctor_id
            WHERE a.patient_id=?
            ORDER BY a.scheduled_for DESC, a.id DESC""",
         (patient["id"],),
     ).fetchall()
-    upcoming = [row for row in appointments if row["status"] in ("Requested", "Confirmed", "Reschedule Requested", "In Progress")]
-    completed = [row for row in appointments if row["status"] == "Completed"]
+
+    def _parse_dash_dt(value):
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except Exception:
+                continue
+        return None
+
+    def _parse_dash_date(value):
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except Exception:
+                continue
+        return None
+
+    def _status_badge(status):
+        mapping = {
+            "Requested": {"tone": "pending", "label": "Requested"},
+            "Confirmed": {"tone": "ready", "label": "Confirmed"},
+            "Reschedule Requested": {"tone": "notice", "label": "Reschedule"},
+            "In Progress": {"tone": "live", "label": "Live"},
+            "Completed": {"tone": "complete", "label": "Completed"},
+            "Cancelled": {"tone": "cancelled", "label": "Cancelled"},
+        }
+        return mapping.get((status or "").strip(), {"tone": "neutral", "label": status or "Pending"})
+
+    def _doctor_initials(name):
+        tokens = [token for token in (name or "").split() if token.strip()]
+        if not tokens:
+            return "DR"
+        return "".join(token[0].upper() for token in tokens[:2])
+
+    enriched_appointments = []
+    for row in appointments:
+        item = dict(row)
+        dt_obj = _parse_dash_dt(item.get("scheduled_for"))
+        item["_dt_obj"] = dt_obj
+        item["_date_label"] = dt_obj.strftime("%b %d, %Y") if dt_obj else "Date pending"
+        item["_time_label"] = dt_obj.strftime("%I:%M %p") if dt_obj else "--"
+        item["_when_short"] = dt_obj.strftime("%a, %b %d · %I:%M %p") if dt_obj else "Schedule pending"
+        item["_status_badge"] = _status_badge(item.get("status"))
+        item["_detail_url"] = url_for("consult_patient_appointment_detail", appointment_id=item["id"])
+        item["_room_ready"] = item.get("status") in ("Confirmed", "Reschedule Requested", "In Progress")
+        item["_room_url"] = (
+            url_for("consultation_video_room", appointment_id=item["id"])
+            if item["_room_ready"]
+            else item["_detail_url"]
+        )
+        item["_visit_action_label"] = "Join Room" if item["_room_ready"] else "Open Visit"
+        item["_summary"] = item.get("diagnosis") or item.get("prescription") or item.get("reason") or "Consultation record ready."
+        item["_doctor_initials"] = _doctor_initials(item.get("doctor_name"))
+        item["_mode_short"] = (item.get("visit_mode") or "Consultation").replace(" Consultation", "")
+        enriched_appointments.append(item)
+
+    upcoming = [
+        row
+        for row in enriched_appointments
+        if row["status"] in ("Requested", "Confirmed", "Reschedule Requested", "In Progress")
+    ]
+    upcoming.sort(key=lambda row: row["_dt_obj"] or datetime.max)
+    completed = [row for row in enriched_appointments if row["status"] == "Completed"]
+    next_appointment = upcoming[0] if upcoming else None
+    latest_completed = completed[0] if completed else None
+
     doctors = conn.execute(
         """SELECT * FROM consult_doctors
            WHERE status='active'
            ORDER BY COALESCE(last_login_at, created_at) DESC, full_name ASC
            LIMIT 8"""
     ).fetchall()
+    care_team = conn.execute(
+        """SELECT d.id, d.full_name, d.specialty, d.consultation_fee,
+                  COUNT(a.id) AS visit_count, MAX(a.scheduled_for) AS last_visit
+           FROM consult_doctors d
+           JOIN consult_appointments a ON a.doctor_id=d.id
+           WHERE a.patient_id=?
+           GROUP BY d.id, d.full_name, d.specialty, d.consultation_fee
+           ORDER BY MAX(a.scheduled_for) DESC, visit_count DESC, d.full_name ASC
+           LIMIT 4""",
+        (patient["id"],),
+    ).fetchall()
+    if not care_team:
+        care_team = conn.execute(
+            """SELECT id, full_name, specialty, consultation_fee, 0 AS visit_count, created_at AS last_visit
+               FROM consult_doctors
+               WHERE status='active'
+               ORDER BY COALESCE(last_login_at, created_at) DESC, full_name ASC
+               LIMIT 4"""
+        ).fetchall()
+
+    labs = conn.execute(
+        """SELECT lr.*, d.full_name AS doctor_name
+           FROM consult_lab_results lr
+           LEFT JOIN consult_doctors d ON d.id=lr.doctor_id
+           WHERE lr.patient_id=?
+           ORDER BY COALESCE(lr.updated_at, lr.created_at) DESC
+           LIMIT 6""",
+        (patient["id"],),
+    ).fetchall()
+    documents = conn.execute(
+        """SELECT doc.*, a.appointment_code, d.full_name AS doctor_name
+           FROM consult_documents doc
+           LEFT JOIN consult_appointments a ON a.id=doc.appointment_id
+           LEFT JOIN consult_doctors d ON d.id=doc.doctor_id
+           WHERE doc.patient_id=?
+           ORDER BY doc.created_at DESC
+           LIMIT 6""",
+        (patient["id"],),
+    ).fetchall()
+    invoices = conn.execute(
+        """SELECT inv.*, a.appointment_code, d.full_name AS doctor_name
+           FROM consult_invoices inv
+           LEFT JOIN consult_appointments a ON a.id=inv.appointment_id
+           LEFT JOIN consult_doctors d ON d.id=a.doctor_id
+           WHERE inv.patient_id=?
+           ORDER BY COALESCE(inv.updated_at, inv.issued_at, inv.created_at) DESC
+           LIMIT 5""",
+        (patient["id"],),
+    ).fetchall()
+    payments = conn.execute(
+        """SELECT pay.*, a.appointment_code
+           FROM consult_payments pay
+           LEFT JOIN consult_appointments a ON a.id=pay.appointment_id
+           WHERE pay.patient_id=?
+           ORDER BY pay.created_at DESC
+           LIMIT 5""",
+        (patient["id"],),
+    ).fetchall()
+    refills = conn.execute(
+        """SELECT r.*, a.appointment_code, d.full_name AS doctor_name
+           FROM consult_prescription_refills r
+           LEFT JOIN consult_appointments a ON a.id=r.appointment_id
+           LEFT JOIN consult_doctors d ON d.id=r.doctor_id
+           WHERE r.patient_id=?
+           ORDER BY r.requested_at DESC
+           LIMIT 5""",
+        (patient["id"],),
+    ).fetchall()
+    notifications_count = (
+        conn.execute(
+            """SELECT COUNT(*) AS total
+               FROM consult_notifications
+               WHERE recipient_role='patient' AND recipient_id=?""",
+            (patient["id"],),
+        ).fetchone()["total"]
+        or 0
+    )
+    message_count = (
+        conn.execute(
+            """SELECT COUNT(*) AS total
+               FROM consult_appointment_messages msg
+               JOIN consult_appointments a ON a.id=msg.appointment_id
+               WHERE a.patient_id=?""",
+            (patient["id"],),
+        ).fetchone()["total"]
+        or 0
+    )
+    document_count = (
+        conn.execute("SELECT COUNT(*) AS total FROM consult_documents WHERE patient_id=?", (patient["id"],)).fetchone()["total"]
+        or 0
+    )
+    lab_total_count = (
+        conn.execute("SELECT COUNT(*) AS total FROM consult_lab_results WHERE patient_id=?", (patient["id"],)).fetchone()["total"]
+        or 0
+    )
+    lab_pending_count = (
+        conn.execute(
+            """SELECT COUNT(*) AS total
+               FROM consult_lab_results
+               WHERE patient_id=? AND status NOT IN ('Reviewed','Completed')""",
+            (patient["id"],),
+        ).fetchone()["total"]
+        or 0
+    )
+    all_invoices = conn.execute(
+        "SELECT status, total_amount FROM consult_invoices WHERE patient_id=?",
+        (patient["id"],),
+    ).fetchall()
+    all_payments = conn.execute(
+        "SELECT amount, status FROM consult_payments WHERE patient_id=?",
+        (patient["id"],),
+    ).fetchall()
+    outstanding_total = sum(
+        _safe_float(row["total_amount"])
+        for row in all_invoices
+        if (row["status"] or "").strip().lower() != "paid"
+    )
+    pending_invoice_count = sum(
+        1 for row in all_invoices if (row["status"] or "").strip().lower() != "paid"
+    )
+    total_paid = sum(
+        _safe_float(row["amount"])
+        for row in all_payments
+        if (row["status"] or "").strip().lower() in ("paid", "completed")
+    )
+    active_prescriptions = len([row for row in enriched_appointments if (row.get("prescription") or "").strip()])
+    refill_pending_count = len(
+        [row for row in refills if (row["refill_status"] or "").strip() in ("Requested", "Pending", "Queued")]
+    )
+
+    patient_since_dt = _parse_dash_dt(patient.get("created_at")) or _parse_dash_date(patient.get("created_at"))
+    patient_since_label = patient_since_dt.strftime("%b %Y") if patient_since_dt else "New member"
+    dob_dt = _parse_dash_date(patient.get("date_of_birth"))
+    patient_age = "--"
+    if dob_dt:
+        today = datetime.now().date()
+        age_years = today.year - dob_dt.date().year - ((today.month, today.day) < (dob_dt.date().month, dob_dt.date().day))
+        patient_age = str(max(age_years, 0))
+
+    hero_cards = [
+        {
+            "tone": "sky",
+            "label": "Next Visit",
+            "value": next_appointment["_when_short"] if next_appointment else "No booking yet",
+        },
+        {
+            "tone": "mint",
+            "label": "Care Team",
+            "value": f"{len({row['doctor_id'] for row in enriched_appointments}) or len(care_team)} doctors",
+        },
+        {
+            "tone": "sand",
+            "label": "Prescriptions",
+            "value": f"{active_prescriptions} ready",
+        },
+        {
+            "tone": "lavender",
+            "label": "Outstanding",
+            "value": f"GHS {outstanding_total:,.0f}",
+        },
+    ]
+    quick_actions = [
+        {
+            "icon": "fa-calendar-check",
+            "label": "My Appointments",
+            "summary": "Track booked visits and join consultations.",
+            "url": next_appointment["_detail_url"] if next_appointment else url_for("consult_patient_dashboard"),
+        },
+        {
+            "icon": "fa-user-doctor",
+            "label": "Find Doctors",
+            "summary": "Browse specialists and book your next care slot.",
+            "url": url_for("consult_doctor_directory"),
+        },
+        {
+            "icon": "fa-notes-medical",
+            "label": "Medical Records",
+            "summary": "Open diagnoses, notes and follow-up history.",
+            "url": url_for("consult_module_page", slug="medical-records"),
+        },
+        {
+            "icon": "fa-file-prescription",
+            "label": "E-Prescriptions",
+            "summary": "Review active prescriptions and refill requests.",
+            "url": url_for("consult_module_page", slug="e-prescriptions"),
+        },
+        {
+            "icon": "fa-flask-vial",
+            "label": "Lab Results",
+            "summary": "See new investigations and doctor review status.",
+            "url": url_for("consult_module_page", slug="lab-results"),
+        },
+        {
+            "icon": "fa-wallet",
+            "label": "Payments",
+            "summary": "Check invoices, receipts and outstanding balances.",
+            "url": url_for("consult_module_page", slug="payments"),
+        },
+    ]
+    billing_cards = [
+        {
+            "tone": "teal",
+            "label": "Outstanding Balance",
+            "value": f"GHS {outstanding_total:,.0f}",
+            "sub": f"{pending_invoice_count} pending invoice{'s' if pending_invoice_count != 1 else ''}",
+        },
+        {
+            "tone": "blue",
+            "label": "Total Paid",
+            "value": f"GHS {total_paid:,.0f}",
+            "sub": f"{len(all_payments)} receipt{'s' if len(all_payments) != 1 else ''} recorded",
+        },
+        {
+            "tone": "lavender",
+            "label": "Alerts",
+            "value": f"{notifications_count + refill_pending_count}",
+            "sub": "Notifications and refill requests waiting",
+        },
+    ]
+    wellness_cards = [
+        {"tone": "mint", "label": "Completed Visits", "value": str(len(completed)), "sub": "Consultations successfully closed"},
+        {"tone": "blue", "label": "Lab Updates", "value": str(lab_total_count), "sub": "Reports in your results timeline"},
+        {"tone": "sand", "label": "Messages", "value": str(message_count), "sub": "Conversation entries with doctors"},
+        {"tone": "lavender", "label": "Documents", "value": str(document_count), "sub": "Files available for download"},
+    ]
+
+    recent_updates = []
+    for row in completed[:3]:
+        recent_updates.append(
+            {
+                "sort": row["_dt_obj"] or datetime.min,
+                "tone": "consult",
+                "icon": "fa-stethoscope",
+                "title": row["doctor_name"],
+                "meta": f"{row['specialty']} · {row['_when_short']}",
+                "summary": row["_summary"],
+                "action_label": "Open Visit",
+                "action_url": row["_detail_url"],
+            }
+        )
+    for row in labs[:2]:
+        sort_dt = _parse_dash_dt(row["updated_at"] or row["created_at"])
+        recent_updates.append(
+            {
+                "sort": sort_dt or datetime.min,
+                "tone": "lab",
+                "icon": "fa-flask-vial",
+                "title": row["report_type"],
+                "meta": f"{row['status']} · {row['doctor_name'] or 'Lab team'}",
+                "summary": row["summary"],
+                "action_label": "Open Labs",
+                "action_url": url_for("consult_module_page", slug="lab-results"),
+            }
+        )
+    for row in documents[:2]:
+        sort_dt = _parse_dash_dt(row["created_at"])
+        recent_updates.append(
+            {
+                "sort": sort_dt or datetime.min,
+                "tone": "doc",
+                "icon": "fa-file-medical",
+                "title": row["category"],
+                "meta": f"{row['original_name']} · {row['doctor_name'] or 'Patient upload'}",
+                "summary": "Document ready in your secure patient file center.",
+                "action_label": "Open File",
+                "action_url": url_for("consultation_download_document", doc_id=row["id"]),
+            }
+        )
+    recent_updates.sort(key=lambda item: item["sort"], reverse=True)
+
+    care_team_cards = []
+    for row in care_team:
+        last_visit_dt = _parse_dash_dt(row["last_visit"])
+        care_team_cards.append(
+            {
+                "name": row["full_name"],
+                "specialty": row["specialty"] or "Consultation Specialist",
+                "meta": (
+                    f"{row['visit_count']} visit{'s' if _safe_int(row['visit_count'], 0) != 1 else ''} · Last visit {last_visit_dt.strftime('%b %d')}"
+                    if last_visit_dt
+                    else "Available for your next follow-up"
+                ),
+                "fee": f"GHS {_safe_float(row['consultation_fee']):,.0f}",
+                "initials": _doctor_initials(row["full_name"]),
+                "url": url_for("consult_book_appointment", doctor_id=row["id"]),
+            }
+        )
+
+    recent_invoice_rows = []
+    for row in invoices[:3]:
+        status = (row["status"] or "Pending").strip()
+        tone = "paid" if status.lower() == "paid" else "pending"
+        recent_invoice_rows.append(
+            {
+                "invoice_no": row["invoice_no"],
+                "doctor_name": row["doctor_name"] or "Consultation Team",
+                "amount": f"GHS {_safe_float(row['total_amount']):,.0f}",
+                "status": status,
+                "tone": tone,
+            }
+        )
+
     return _render(
         "consultation_patient_dashboard.html",
         patient=patient,
         upcoming=upcoming,
         completed=completed,
         doctors=doctors,
+        next_appointment=next_appointment,
+        latest_completed=latest_completed,
+        hero_cards=hero_cards,
+        quick_actions=quick_actions,
+        billing_cards=billing_cards,
+        wellness_cards=wellness_cards,
+        recent_updates=recent_updates[:6],
+        care_team_cards=care_team_cards,
+        recent_invoice_rows=recent_invoice_rows,
+        patient_age=patient_age,
+        patient_since_label=patient_since_label,
+        notifications_count=notifications_count,
+        lab_pending_count=lab_pending_count,
+        message_count=message_count,
+        document_count=document_count,
+        pending_invoice_count=pending_invoice_count,
+        outstanding_total=outstanding_total,
+        total_paid=total_paid,
+        refill_pending_count=refill_pending_count,
+        active_prescriptions=active_prescriptions,
     )
 
 
