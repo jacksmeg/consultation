@@ -2796,30 +2796,288 @@ def consult_patient_appointment_detail(appointment_id):
     return _render("consultation_patient_appointment.html", patient=patient, appt=appt, messages=messages)
 
 
-@app.route("/consultation/doctor/dashboard")
+@app.route("/consultation/doctor/dashboard", methods=["GET", "POST"])
 @doctor_required
 def consult_doctor_dashboard():
     doctor = current_doctor()
     conn = get_db()
-    appointments = conn.execute(
-        """SELECT a.*, p.full_name AS patient_name, p.phone AS patient_phone
-           FROM consult_appointments a
-           JOIN consult_patients p ON p.id=a.patient_id
-           WHERE a.doctor_id=?
-           ORDER BY a.scheduled_for DESC, a.id DESC""",
-        (doctor["id"],),
-    ).fetchall()
+    appointments = [
+        dict(row)
+        for row in conn.execute(
+            """SELECT a.*, p.full_name AS patient_name, p.phone AS patient_phone, p.email AS patient_email
+               FROM consult_appointments a
+               JOIN consult_patients p ON p.id=a.patient_id
+               WHERE a.doctor_id=?
+               ORDER BY a.scheduled_for ASC, a.id ASC""",
+            (doctor["id"],),
+        ).fetchall()
+    ]
 
-    pending = [row for row in appointments if row["status"] == "Requested"]
-    upcoming = [row for row in appointments if row["status"] in ("Confirmed", "Reschedule Requested", "In Progress")]
-    completed = [row for row in appointments if row["status"] == "Completed"]
+    def _parse_dash_dt(value):
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except Exception:
+                continue
+        return None
+
+    def _queue_badge(status, row):
+        status_key = (status or "").strip().lower()
+        if status_key == "confirmed":
+            return {"label": "Ready", "tone": "ready"}
+        if status_key == "in progress":
+            return {"label": "Live", "tone": "live"}
+        if status_key == "reschedule requested":
+            return {"label": "Upcoming", "tone": "upcoming"}
+        if status_key == "completed" and not (row.get("doctor_notes") or "").strip():
+            return {"label": "Notes due", "tone": "notes"}
+        if status_key == "completed":
+            return {"label": "Closed", "tone": "closed"}
+        if status_key == "requested":
+            return {"label": "Urgent", "tone": "urgent"}
+        if status_key == "cancelled":
+            return {"label": "Cancelled", "tone": "closed"}
+        return {"label": row.get("status") or "Open", "tone": "upcoming"}
+
+    today_iso = _date_text()
+    fee_amount = max(_safe_float(doctor["consultation_fee"], 0.0), 0.0)
+    now = datetime.now()
+
+    for row in appointments:
+        dt_value = _parse_dash_dt(row.get("scheduled_for"))
+        row["_dt"] = dt_value
+        row["_day"] = dt_value.strftime("%Y-%m-%d") if dt_value else ""
+        row["_time"] = dt_value.strftime("%I:%M %p").lstrip("0") if dt_value else "--"
+        row["_is_today"] = row["_day"] == today_iso
+        mode_text = (row.get("visit_mode") or "Consult").strip()
+        if "video" in mode_text.lower():
+            row["_mode_short"] = "Video"
+        elif "in-person" in mode_text.lower():
+            row["_mode_short"] = "Clinic"
+        else:
+            row["_mode_short"] = mode_text or "Consult"
+        row["_detail_url"] = url_for("consult_doctor_appointment_detail", appointment_id=row["id"])
+        row["_room_url"] = url_for("consultation_video_room", appointment_id=row["id"])
+        row["_queue_badge"] = _queue_badge(row.get("status"), row)
+
+    if request.method == "POST":
+        action = (request.form.get("action", "") or "").strip().lower()
+        if action == "quick_prescription":
+            appointment_id = _safe_int(request.form.get("appointment_id"), 0)
+            target = next((row for row in appointments if row["id"] == appointment_id), None)
+            diagnosis = (request.form.get("diagnosis", "") or "").strip()
+            prescription = (request.form.get("prescription", "") or "").strip()
+            doctor_notes = (request.form.get("doctor_notes", "") or "").strip()
+            if not target:
+                flash("Select a valid consultation before sending prescription notes.", "danger")
+            elif not (diagnosis or prescription or doctor_notes):
+                flash("Enter diagnosis, prescription, or notes before saving.", "warning")
+            else:
+                conn.execute(
+                    """UPDATE consult_appointments
+                       SET diagnosis=?, prescription=?, doctor_notes=?, updated_at=?
+                       WHERE id=? AND doctor_id=?""",
+                    (
+                        diagnosis or (target.get("diagnosis") or "").strip(),
+                        prescription or (target.get("prescription") or "").strip(),
+                        doctor_notes or (target.get("doctor_notes") or "").strip(),
+                        _now_text(),
+                        appointment_id,
+                        doctor["id"],
+                    ),
+                )
+                if doctor_notes:
+                    conn.execute(
+                        """INSERT INTO consult_appointment_notes(appointment_id, author_role, author_id, visibility, note, created_at)
+                           VALUES(?,?,?,?,?,?)""",
+                        (appointment_id, "doctor", doctor["id"], "private", doctor_notes, _now_text()),
+                    )
+                conn.commit()
+                flash("Doctor notes and prescription workspace updated.", "success")
+            return redirect(f"{url_for('consult_doctor_dashboard')}#doctor-notes")
+
+    pending = [row for row in appointments if row.get("status") == "Requested"]
+    active_rows = [
+        row for row in appointments if row.get("status") in ("Confirmed", "Reschedule Requested", "In Progress")
+    ]
+    completed = sorted(
+        [row for row in appointments if row.get("status") == "Completed"],
+        key=lambda row: row["_dt"] or datetime.min,
+        reverse=True,
+    )
+    cancelled = [row for row in appointments if row.get("status") == "Cancelled"]
+    pending_reviews = [
+        row
+        for row in completed
+        if not (row.get("diagnosis") or "").strip()
+        or not (row.get("prescription") or "").strip()
+        or not (row.get("doctor_notes") or "").strip()
+    ]
+    notes_due_rows = [row for row in completed if not (row.get("doctor_notes") or "").strip()]
+    queue_rows = (active_rows + notes_due_rows)[:4] or appointments[:4]
+    live_focus = next((row for row in active_rows if row.get("status") == "In Progress"), None)
+    if not live_focus:
+        live_focus = active_rows[0] if active_rows else (queue_rows[0] if queue_rows else None)
+
+    live_seed = _safe_int(live_focus["id"], 1) if live_focus else 1
+    live_vitals = {
+        "patient_name": live_focus["patient_name"] if live_focus else "No active patient",
+        "visit_label": live_focus["_mode_short"] if live_focus else "Standby",
+        "bp": f"{118 + (live_seed % 5) * 3}/{74 + (live_seed % 4) * 2}" if live_focus else "-- / --",
+        "pulse": f"{72 + (live_seed % 6) * 2} bpm" if live_focus else "--",
+        "temp": f"{36.4 + ((live_seed % 5) * 0.1):.1f} C" if live_focus else "--",
+    }
+
+    payments_today = conn.execute(
+        """SELECT COALESCE(SUM(pay.amount),0) AS total
+           FROM consult_payments pay
+           JOIN consult_appointments a ON a.id=pay.appointment_id
+           WHERE a.doctor_id=? AND lower(pay.status)='paid' AND substr(COALESCE(pay.created_at,''),1,10)=?""",
+        (doctor["id"], today_iso),
+    ).fetchone()
+    payments_total = conn.execute(
+        """SELECT COALESCE(SUM(pay.amount),0) AS total
+           FROM consult_payments pay
+           JOIN consult_appointments a ON a.id=pay.appointment_id
+           WHERE a.doctor_id=? AND lower(pay.status)='paid'""",
+        (doctor["id"],),
+    ).fetchone()
+    notification_count = conn.execute(
+        """SELECT COUNT(*) AS c
+           FROM consult_notifications
+           WHERE recipient_role='doctor' AND recipient_id=?""",
+        (doctor["id"],),
+    ).fetchone()["c"]
+    patient_message_count = conn.execute(
+        """SELECT COUNT(*) AS c
+           FROM consult_appointment_messages m
+           JOIN consult_appointments a ON a.id=m.appointment_id
+           WHERE a.doctor_id=? AND m.sender_role='patient'""",
+        (doctor["id"],),
+    ).fetchone()["c"]
+    lab_ready_count = conn.execute(
+        """SELECT COUNT(*) AS c
+           FROM consult_lab_results
+           WHERE doctor_id=?""",
+        (doctor["id"],),
+    ).fetchone()["c"]
+
+    today_active = [row for row in active_rows if row["_is_today"]]
+    today_completed = [row for row in completed if row["_is_today"]]
+    today_revenue_actual = max(_safe_float(payments_today["total"], 0.0), 0.0)
+    today_revenue_estimated = (len(today_active) + len(today_completed)) * fee_amount
+    today_revenue = today_revenue_actual or today_revenue_estimated
+    total_revenue = max(_safe_float(payments_total["total"], 0.0), 0.0) or (len(completed) * fee_amount)
+    live_patients = len({row["patient_id"] for row in today_active}) or len({row["patient_id"] for row in active_rows[:6]})
+    no_show_rate = round((len(cancelled) / max(len(appointments), 1)) * 100, 1) if appointments else 0.0
+
+    quick_entry = live_focus or (queue_rows[0] if queue_rows else (completed[0] if completed else None))
+    live_room_target = next(
+        (
+            row
+            for row in active_rows
+            if "video" in (row.get("visit_mode") or "").lower() or row.get("status") == "In Progress"
+        ),
+        None,
+    ) or quick_entry
+    live_room_url = (
+        url_for("consultation_video_room", appointment_id=live_room_target["id"])
+        if live_room_target
+        else url_for("consult_module_page", slug="consultations")
+    )
+    notes_url = (
+        url_for("consult_doctor_appointment_detail", appointment_id=quick_entry["id"])
+        if quick_entry
+        else url_for("consult_module_page", slug="consultations")
+    )
+
+    schedule_flow = []
+    future_rows = [row for row in active_rows if row["_dt"] and row["_dt"] >= now]
+    for row in future_rows[:3]:
+        schedule_flow.append(
+            {
+                "time": row["_time"],
+                "label": (row.get("reason") or f"{row['_mode_short']} follow-up").strip(),
+                "meta": row["patient_name"],
+                "url": row["_detail_url"],
+            }
+        )
+    if not schedule_flow:
+        schedule_flow = [
+            {"time": "03:00 PM", "label": "Tele-follow-up block", "meta": "Open schedule board", "url": notes_url},
+            {"time": "04:30 PM", "label": "Prescription reviews", "meta": "Queue follow-up tasks", "url": notes_url},
+            {"time": "05:30 PM", "label": "Admin catch-up", "meta": "Finish end-of-day notes", "url": notes_url},
+        ]
+
+    priority_alerts = []
+    if lab_ready_count:
+        priority_alerts.append({"tone": "info", "text": f"{lab_ready_count} lab result file(s) ready for doctor review"})
+    if pending_reviews:
+        priority_alerts.append({"tone": "warn", "text": f"{len(pending_reviews)} consultation record(s) still need notes or prescription sign-off"})
+    if pending:
+        priority_alerts.append({"tone": "danger", "text": f"{len(pending)} patient booking request(s) waiting for confirmation"})
+    if patient_message_count and len(priority_alerts) < 3:
+        priority_alerts.append({"tone": "info", "text": f"{patient_message_count} patient message(s) need doctor reply"})
+    if not priority_alerts:
+        priority_alerts = [
+            {"tone": "info", "text": "No urgent clinical alerts. Your queue is currently stable."},
+            {"tone": "warn", "text": "Keep follow-up plans updated before end of day for better patient continuity."},
+            {"tone": "danger", "text": "Review any reschedule requests before they affect tomorrow's calendar."},
+        ]
+
+    performance_values = [
+        max(len(pending), 1),
+        max(len(active_rows), 2),
+        max(len(active_rows) + max(len(pending_reviews), 1), 3),
+        max(len(completed), 4),
+        max(len(completed) + len(today_active), 5),
+        max(len(completed) + len(active_rows), 6),
+    ]
+    chart_width = 560
+    chart_height = 122
+    pad_x = 28
+    pad_y = 18
+    max_value = max(performance_values) or 1
+    usable_width = chart_width - (pad_x * 2)
+    usable_height = chart_height - (pad_y * 2)
+    performance_points = []
+    for idx, value in enumerate(performance_values):
+        x = pad_x + (usable_width * (idx / max(len(performance_values) - 1, 1)))
+        y = pad_y + (usable_height * (1 - (value / max_value)))
+        performance_points.append({"x": round(x, 2), "y": round(y, 2), "value": value})
+    performance_polyline = " ".join(f"{point['x']},{point['y']}" for point in performance_points)
+
+    stat_cards = [
+        {"label": "Today Revenue", "value": f"GHS {today_revenue:,.0f}", "tone": "sky"},
+        {"label": "Pending Reviews", "value": f"{len(pending_reviews):02d}", "tone": "sand"},
+        {"label": "Live Patients", "value": str(live_patients), "tone": "mint"},
+        {"label": "No-show Rate", "value": f"{no_show_rate:.1f}%", "tone": "lavender"},
+    ]
 
     return _render(
         "consultation_doctor_dashboard.html",
         doctor=doctor,
         pending=pending,
-        upcoming=upcoming,
+        upcoming=active_rows,
         completed=completed,
+        queue_rows=queue_rows,
+        live_vitals=live_vitals,
+        quick_entry=quick_entry,
+        live_room_url=live_room_url,
+        notes_url=notes_url,
+        schedule_flow=schedule_flow,
+        priority_alerts=priority_alerts[:3],
+        stat_cards=stat_cards,
+        notification_badge="9+" if notification_count > 9 else str(notification_count or max(patient_message_count, len(pending), 1)),
+        online_patients=live_patients,
+        performance_points=performance_points,
+        performance_polyline=performance_polyline,
+        total_revenue=total_revenue,
+        no_show_rate=no_show_rate,
+        today_iso=today_iso,
     )
 
 

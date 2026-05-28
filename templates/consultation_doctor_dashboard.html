@@ -1,86 +1,282 @@
-{% extends "consultation_base.html" %}
-{% block title %}Doctor Dashboard | JHIMS Consultation{% endblock %}
-{% block content %}
-<section class="section">
-  <div class="shell">
-    <div class="section-head">
-      <div>
-        <span class="eyebrow">Doctor Dashboard</span>
-        <h1 class="page-title" style="margin-top:10px;">Doctor Dashboard</h1>
-        <p class="subtitle">Welcome {{ doctor.full_name }}. Manage incoming online consultation bookings.</p>
-      </div>
-      <div class="badge-row">
-        {% if (doctor.verification_status or 'pending') == 'verified' %}
-          <span class="pill pill-ok">Verified Doctor</span>
-        {% else %}
-          <span class="pill pill-pending">Verification Pending</span>
-        {% endif %}
-        <a class="btn btn-soft" href="{{ url_for('consult_doctor_profile') }}">Edit Profile</a>
-      </div>
-    </div>
-    <div class="grid-3">
-      <article class="card kpi"><span class="pill pill-pending">New Requests</span><h3>{{ pending|length }}</h3><p class="tiny">Awaiting doctor action</p></article>
-      <article class="card kpi"><span class="pill pill-info">Upcoming</span><h3>{{ upcoming|length }}</h3><p class="tiny">Confirmed and active schedule</p></article>
-      <article class="card kpi"><span class="pill pill-ok">Completed</span><h3>{{ completed|length }}</h3><p class="tiny">Consultations finalized</p></article>
-    </div>
-  </div>
-</section>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Doctor Dashboard | JHIMS Consultation</title>
+  <meta name="theme-color" content="#0f2a5c">
+  <link rel="manifest" href="{{ url_for('consultation_manifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='jhims_logo.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <style>
+    :root{--navy:#0d2456;--navy-2:#0b1e4a;--panel:#f6fbff;--line:#d7e6f7;--ink:#183c74;--muted:#6380a7;--soft:0 12px 22px rgba(12,33,77,.08);--shadow:0 18px 34px rgba(12,33,77,.10);--mint:#dff7ea;--sky:#dcedff;--sand:#fff1d7;--lav:#efe1ff}
+    *{box-sizing:border-box}body{margin:0;font-family:"Manrope","Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(78,154,239,.12),transparent 24%),linear-gradient(180deg,#eef5ff 0%,#f7fbff 100%)}a{text-decoration:none;color:inherit}img{display:block;max-width:100%}
+    .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    .page{max-width:1550px;margin:18px auto;padding:0 18px}.app{min-height:calc(100vh - 36px);background:#fff;border-radius:34px;overflow:hidden;box-shadow:0 28px 56px rgba(7,27,67,.18);display:grid;grid-template-columns:270px 1fr}
+    .sidebar{background:linear-gradient(180deg,#102a60 0%,#09183d 100%);color:#dbe9ff;padding:22px 18px;display:flex;flex-direction:column;gap:18px}.brand{display:flex;align-items:flex-start;gap:14px;padding-bottom:16px;border-bottom:1px solid rgba(183,211,255,.18)}
+    .brand-mark{width:52px;height:52px;border-radius:16px;background:rgba(255,255,255,.96);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 18px rgba(3,20,54,.22);position:relative;flex:none}.brand-mark::before{content:"";width:26px;height:26px;border-radius:999px;background:radial-gradient(circle at 30% 30%,#3bd2d6 0%,#1993aa 78%);box-shadow:inset 0 0 0 5px rgba(255,255,255,.88)}
+    .brand-copy strong{display:block;font-family:"Sora","Manrope",sans-serif;font-size:1.05rem;color:#fff;line-height:1.1}.brand-copy span{display:block;margin-top:3px;font-size:.92rem;color:#c9ddff;font-weight:600}.brand-copy small{display:block;margin-top:4px;font-size:.8rem;color:#86a8d7}
+    .nav-primary{display:grid;gap:6px}.nav-hero-link{display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:18px;background:linear-gradient(135deg,#25c2c5,#21a2a8);color:#fff;font-weight:800;box-shadow:0 12px 22px rgba(18,83,108,.28)}
+    .section-label{margin:10px 8px 2px;color:#86a8d7;font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.side-links{display:grid;gap:8px}.side-link{display:flex;align-items:center;gap:12px;padding:6px 4px;color:#d9e6ff;font-size:.98rem;font-weight:600}.side-link:hover{color:#fff}.side-dot{width:8px;height:16px;border-radius:999px;background:#2f82f5;box-shadow:0 0 0 4px rgba(47,130,245,.12);flex:none}
+    .side-support{margin-top:auto;background:linear-gradient(135deg,#195998 0%,#1a6cae 100%);border-radius:22px;padding:20px 22px;box-shadow:0 16px 26px rgba(5,28,66,.24)}.side-support strong{display:block;color:#fff;font-size:1rem;margin-bottom:6px}.side-support span{display:block;color:#c6ddff;font-size:.92rem;line-height:1.55}
+    .workspace{background:linear-gradient(180deg,#f6fbff 0%,#fff 100%);display:flex;flex-direction:column;min-width:0}.topbar{min-height:74px;padding:14px 28px;background:linear-gradient(90deg,#132d67 0%,#10295f 100%);display:flex;align-items:center;justify-content:space-between;gap:18px}
+    .top-tabs{display:flex;align-items:center;gap:20px;flex-wrap:wrap}.top-tab{color:#d2e3ff;font-size:.99rem;font-weight:700;padding:10px 0;border-bottom:4px solid transparent}.top-tab.active{color:#2dd6d6;border-bottom-color:#2dd6d6}.top-right{display:flex;align-items:center;gap:12px;margin-left:auto}
+    .notif-pill{width:44px;height:44px;border-radius:999px;background:rgba(74,124,206,.40);border:1px solid rgba(162,193,240,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800}.profile-pill{display:flex;align-items:center;gap:12px;min-width:280px;padding:7px 14px 7px 10px;border-radius:999px;background:linear-gradient(180deg,#16438e,#103875);border:1px solid rgba(162,193,240,.38);color:#fff}
+    .profile-avatar{width:44px;height:44px;border-radius:50%;overflow:hidden;background:#fff;border:2px solid rgba(255,255,255,.24);flex:none}.profile-avatar img{width:100%;height:100%;object-fit:cover}.profile-meta strong{display:block;font-size:1rem;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.profile-meta span{display:block;margin-top:2px;color:#a9c7f2;font-size:.92rem;white-space:nowrap}.logout-pill{width:44px;height:44px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.10);border:1px solid rgba(188,208,242,.3)}
+    .content{padding:24px 28px 20px;display:grid;gap:20px}.flash-stack{display:grid;gap:10px}.flash{border-radius:14px;padding:12px 14px;font-size:.92rem;font-weight:700;box-shadow:var(--soft)}.flash-success{background:#dcfce7;color:#166534}.flash-danger{background:#fee2e2;color:#991b1b}.flash-warning{background:#fef3c7;color:#92400e}.flash-info{background:#dbeafe;color:#1e3a8a}
+    .hero{min-height:246px;border-radius:30px;background:linear-gradient(102deg,#dff2ff 0%,#edf6ff 46%,#f7efff 100%);border:1px solid #cfe3f6;box-shadow:var(--shadow);display:grid;grid-template-columns:1.08fr .92fr;overflow:hidden;position:relative}.hero::before,.hero::after{content:"";position:absolute;border-radius:999px;pointer-events:none}.hero::before{width:420px;height:420px;right:-180px;bottom:-210px;background:radial-gradient(circle,rgba(53,199,224,.16) 0%,rgba(53,199,224,0) 72%)}.hero::after{width:220px;height:220px;left:-90px;top:-70px;background:radial-gradient(circle,rgba(91,156,255,.12) 0%,rgba(91,156,255,0) 70%)}
+    .hero-left{padding:34px 30px 24px 32px;position:relative;z-index:1}.hero h1{margin:0;font-family:"Sora","Manrope",sans-serif;font-size:4rem;line-height:1.02;letter-spacing:-.04em;color:#1c3f7b;max-width:660px}.hero h1 span{color:#1fb2bf}.hero-copy{margin:12px 0 0;color:#5e7da5;font-size:1rem;line-height:1.72;max-width:560px;font-weight:600}.hero-actions{margin-top:18px;display:flex;gap:14px;flex-wrap:wrap}.hero-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 20px;border-radius:18px;color:#fff;font-weight:800;font-size:1rem;box-shadow:0 12px 22px rgba(16,71,125,.18);min-width:206px}.hero-btn.teal{background:linear-gradient(135deg,#20c3bc,#20a3a8)}.hero-btn.blue{background:linear-gradient(135deg,#4b89ea,#4d79db)}.hero-btn.orange{background:linear-gradient(135deg,#ff944f,#ffb74a)}.hero-subnote{margin-top:12px;color:#6883a8;font-size:.92rem;font-weight:600}
+    .hero-right{position:relative;padding:30px 24px 0 10px;display:flex;align-items:flex-end;justify-content:flex-end}.hero-stats{position:absolute;top:30px;left:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;width:360px;max-width:calc(100% - 180px);z-index:2}.hero-stat{padding:16px 18px;border-radius:22px;box-shadow:var(--soft);border:1px solid rgba(205,224,244,.85);backdrop-filter:blur(4px)}.hero-stat span{display:block;font-size:.95rem;color:#2f5b91;margin-bottom:6px}.hero-stat strong{display:block;font-size:1.1rem;color:#1b3f79;font-family:"Sora","Manrope",sans-serif}.hero-stat.sky{background:rgba(217,239,255,.94)}.hero-stat.sand{background:rgba(255,242,215,.94)}.hero-stat.mint{background:rgba(224,249,236,.94)}.hero-stat.lavender{background:rgba(241,229,255,.94)}.doctor-hero-image{position:relative;z-index:1;width:min(360px,100%);align-self:flex-end;margin-right:6px}.doctor-hero-image img{width:100%;height:auto;object-fit:contain;filter:drop-shadow(0 24px 28px rgba(25,73,124,.12))}.hero-dot{position:absolute;border-radius:999px;z-index:1}.hero-dot.one{width:16px;height:16px;right:128px;top:18px;background:#21c9c5}.hero-dot.two{width:24px;height:24px;right:116px;top:130px;background:#ffb14a}.hero-dot.three{width:16px;height:16px;right:70px;top:56px;background:#4e88f0}
+    .grid-main{display:grid;grid-template-columns:1.22fr .92fr .84fr;gap:18px}.grid-bottom{display:grid;grid-template-columns:1.22fr .76fr .64fr;gap:18px;align-items:start}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:28px;box-shadow:var(--shadow);padding:18px 20px;position:relative;min-width:0}.panel h2{margin:0;font-family:"Sora","Manrope",sans-serif;font-size:1.08rem;color:#1c427e}.panel-head{margin-bottom:16px}.panel-head p{margin:5px 0 0;font-size:.9rem;color:var(--muted);line-height:1.5}
+    .queue-list{display:grid;gap:10px}.queue-row{display:grid;grid-template-columns:88px 1fr 96px auto;gap:12px;align-items:center;padding:14px 16px;border-radius:18px;background:#f7fbff;border:1px solid #dce8f7;box-shadow:0 8px 18px rgba(13,43,93,.05)}.queue-time{font-weight:800;color:#264e88;font-size:1.02rem}.queue-name{font-weight:700;color:#2f5d96;font-size:1.02rem}.queue-name small{display:block;margin-top:3px;color:#7991b3;font-size:.84rem;font-weight:600}.queue-mode{color:#5d7ea5;font-weight:700;font-size:.98rem}.queue-badge{display:inline-flex;align-items:center;justify-content:center;min-width:112px;padding:10px 16px;border-radius:999px;font-weight:800;font-size:.9rem}.queue-badge.ready{background:#daf6e8;color:#18805a}.queue-badge.live{background:#dbe9ff;color:#2655a7}.queue-badge.upcoming{background:#dde8fb;color:#2b5db4}.queue-badge.notes{background:#fff0d7;color:#b67c18}.queue-badge.urgent{background:#fde0de;color:#d34a46}.queue-badge.closed{background:#eef4fc;color:#607d9f}
+    .vitals-panel{border:1px solid #2669bf;background:linear-gradient(180deg,#24a4b2 0%,#2a6fd4 100%);color:#fff;box-shadow:0 20px 32px rgba(32,107,177,.22)}.vitals-panel h2,.vitals-panel .panel-head p{color:#fff}.vitals-focus{display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.16);color:#f4fbff;font-size:.86rem;font-weight:700}.vitals-field{margin-top:12px;border:none;border-radius:18px;background:#fff;color:#163f78;width:100%;padding:14px 16px;font:700 1rem "Manrope","Segoe UI",sans-serif;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}.vitals-field::placeholder{color:#b8cceb;opacity:1}
+    .notes-form{display:grid;gap:12px}.notes-kicker{margin:-4px 0 2px;color:#738eb1;font-size:.88rem;font-weight:700}.notes-input,.notes-textarea{width:100%;border:1px solid #d2e2f4;border-radius:18px;background:#f9fcff;color:#2e5a92;padding:14px 16px;font:600 1rem "Manrope","Segoe UI",sans-serif;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}.notes-input:focus,.notes-textarea:focus{outline:none;border-color:#5a98f0;box-shadow:0 0 0 4px rgba(74,136,234,.14);background:#fff}.notes-textarea{min-height:92px;resize:vertical}.notes-button{border:none;border-radius:18px;background:linear-gradient(135deg,#ff9047,#ffb44b);color:#fff;padding:14px 18px;font-size:1rem;font-weight:800;box-shadow:0 14px 22px rgba(255,153,74,.22);cursor:pointer}
+    .chart-shell{margin-top:12px;background:linear-gradient(180deg,#f9fbff 0%,#fff 100%);border:1px solid #d8e6f7;border-radius:20px;padding:16px 14px 12px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}.chart-shell svg{width:100%;height:auto;display:block}.chart-metrics{margin-top:16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.metric-card{padding:12px 14px;border-radius:18px;box-shadow:var(--soft);border:1px solid #d8e6f7}.metric-card.sky{background:var(--mint)}.metric-card.blue{background:var(--sky)}.metric-card.sand{background:var(--sand)}.metric-card span{display:block;font-size:.92rem;color:#476995;margin-bottom:4px}.metric-card strong{display:block;font-size:1.2rem;color:#1d427e;font-family:"Sora","Manrope",sans-serif}
+    .alert-list{display:grid;gap:12px}.alert-chip{padding:16px 18px;border-radius:18px;font-size:1.02rem;font-weight:700;line-height:1.5;border:1px solid #dde7f4}.alert-chip.info{background:#e4efff;color:#305ab4}.alert-chip.warn{background:#fff0d7;color:#bb7a11}.alert-chip.danger{background:#ffdedd;color:#cf4b47}
+    .flow-list{display:grid;gap:12px}.flow-item{display:grid;grid-template-columns:92px 1fr;gap:12px;align-items:center;padding:14px 16px;border-radius:18px;border:1px solid #d8e6f7;background:#fbfdff}.flow-item strong{display:block;color:#2f5b95;font-size:1.02rem}.flow-item span{display:block;margin-top:3px;color:#7b95b7;font-size:.9rem;font-weight:700}.flow-time{color:#29548d;font-size:1.04rem;font-weight:800;white-space:nowrap}
+    .footer{display:flex;justify-content:flex-end;gap:26px;flex-wrap:wrap;color:#7991b2;font-size:.92rem;padding-top:2px}.footer a:hover{color:#315a98}
+    @media (max-width:1380px){.hero h1{font-size:3.35rem}.grid-main,.grid-bottom{grid-template-columns:1fr}.hero-stats{position:static;width:100%;max-width:none;margin-bottom:12px}.hero-right{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:end}}
+    @media (max-width:1160px){.app{grid-template-columns:1fr}.sidebar{display:none}.hero{grid-template-columns:1fr}.hero-right{padding:0 20px 22px;justify-content:center}.hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar{padding:14px 18px;flex-wrap:wrap}.top-tabs{gap:14px}.top-right{width:100%;justify-content:flex-end}}
+    @media (max-width:760px){.page{margin:8px auto;padding:0 8px}.app{border-radius:24px}.content{padding:14px;gap:16px}.topbar{padding:14px}.hero{border-radius:24px}.hero-left{padding:24px 18px 18px}.hero h1{font-size:2.5rem}.hero-actions{gap:10px}.hero-btn{min-width:0;width:100%}.hero-stats{grid-template-columns:1fr}.profile-pill{min-width:0;width:100%}.queue-row{grid-template-columns:1fr}.chart-metrics{grid-template-columns:1fr}.footer{justify-content:flex-start;gap:14px 18px}}
+    @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="app">
+      <aside class="sidebar">
+        <a class="brand" href="{{ url_for('consult_doctor_dashboard') }}">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-copy">
+            <strong>JHIMS</strong>
+            <span>Doctor Portal</span>
+            <small>Clinical command center</small>
+          </span>
+        </a>
+        <nav class="nav-primary" aria-label="Primary doctor navigation">
+          <a class="nav-hero-link" href="{{ url_for('consult_doctor_dashboard') }}">Dashboard</a>
+          <div class="section-label">Today</div>
+          <div class="side-links">
+            <a class="side-link" href="#consult-queue"><span class="side-dot"></span>Consult Queue</a>
+            <a class="side-link" href="{{ live_room_url }}"><span class="side-dot"></span>Video Consults</a>
+            <a class="side-link" href="#schedule-flow"><span class="side-dot"></span>My Schedule</a>
+            <a class="side-link" href="{{ url_for('consult_module_page', slug='patients') }}"><span class="side-dot"></span>Patients</a>
+          </div>
+          <div class="section-label">Care</div>
+          <div class="side-links">
+            <a class="side-link" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}"><span class="side-dot"></span>Prescriptions</a>
+            <a class="side-link" href="{{ url_for('consult_module_page', slug='lab-results') }}"><span class="side-dot"></span>Lab Orders</a>
+            <a class="side-link" href="#doctor-notes"><span class="side-dot"></span>Clinical Notes</a>
+            <a class="side-link" href="{{ notes_url }}"><span class="side-dot"></span>Follow-Ups</a>
+          </div>
+          <div class="section-label">Business</div>
+          <div class="side-links">
+            <a class="side-link" href="{{ url_for('consult_module_page', slug='billing') }}"><span class="side-dot"></span>Billing</a>
+            <a class="side-link" href="{{ url_for('consult_module_page', slug='analytics-pro') }}"><span class="side-dot"></span>Analytics</a>
+            <a class="side-link" href="{{ notes_url }}"><span class="side-dot"></span>Messages</a>
+            <a class="side-link" href="{{ url_for('consult_doctor_profile') }}"><span class="side-dot"></span>Settings</a>
+          </div>
+        </nav>
+        <div class="side-support"><strong>Critical Support</strong><span>Escalate urgent cases fast.</span></div>
+      </aside>
+      <main class="workspace">
+        <header class="topbar">
+          <nav class="top-tabs" aria-label="Doctor top navigation">
+            <a class="top-tab active" href="{{ url_for('consult_doctor_dashboard') }}">Dashboard</a>
+            <a class="top-tab" href="#consult-queue">Queue</a>
+            <a class="top-tab" href="{{ url_for('consult_module_page', slug='patients') }}">Patients</a>
+            <a class="top-tab" href="{{ url_for('consult_module_page', slug='e-prescriptions') }}">E-Prescriptions</a>
+            <a class="top-tab" href="{{ url_for('consult_module_page', slug='reports') }}">Reports</a>
+            <a class="top-tab" href="{{ url_for('consult_module_page', slug='billing') }}">Revenue</a>
+            <a class="top-tab" href="{{ url_for('consult_doctor_profile') }}">Settings</a>
+          </nav>
+          <div class="top-right">
+            <span class="notif-pill">{{ notification_badge }}</span>
+            <div class="profile-pill">
+              <span class="profile-avatar"><img src="{{ url_for('static', filename='img/consultation_doctor_avatar.png') }}" alt="Doctor profile"></span>
+              <span class="profile-meta"><strong>Dr. {{ doctor.full_name }}</strong><span>{{ doctor.specialty or 'General Practice' }} | {{ online_patients }} patient{% if online_patients != 1 %}s{% endif %} online</span></span>
+            </div>
+            <a class="logout-pill" href="{{ url_for('consult_doctor_logout') }}" aria-label="Logout doctor"><i class="fa-solid fa-xmark"></i></a>
+          </div>
+        </header>
+        <section class="content">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              <div class="flash-stack">
+                {% for category, message in messages %}
+                  {% set mapped = 'info' %}
+                  {% if category in ['danger', 'error'] %}{% set mapped = 'danger' %}{% endif %}
+                  {% if category == 'success' %}{% set mapped = 'success' %}{% endif %}
+                  {% if category == 'warning' %}{% set mapped = 'warning' %}{% endif %}
+                  <div class="flash flash-{{ mapped }}">{{ message }}</div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          {% endwith %}
 
-<section class="section">
-  <div class="shell card">
-    <h2 class="page-title" style="font-size:1.3rem;">Incoming Requests</h2>
-    {% if pending %}
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Code</th><th>Patient</th><th>When</th><th>Mode</th><th>Reason</th><th></th></tr></thead>
-          <tbody>
-            {% for appt in pending %}
-              <tr>
-                <td>{{ appt.appointment_code }}</td>
-                <td>{{ appt.patient_name }}<br><span class="tiny">{{ appt.patient_phone }}</span></td>
-                <td>{{ appt.scheduled_for|fmt_dt }}</td>
-                <td>{{ appt.visit_mode }}</td>
-                <td>{{ appt.reason }}</td>
-                <td><a class="btn btn-soft" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=appt.id) }}">Open</a></td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="tiny">No new requests at the moment.</p>
-    {% endif %}
-  </div>
-</section>
+          <section class="hero">
+            <div class="hero-left">
+              <h1>Run Your Day.<br>Care, Consults<br><span>&amp; Decisions Fast.</span></h1>
+              <p class="hero-copy">Review the live queue, launch video consults, sign notes and keep your clinic flow moving from one colorful JHIMS doctor workspace.</p>
+              <div class="hero-actions">
+                <a class="hero-btn teal" href="{{ live_room_url }}"><i class="fa-solid fa-video"></i>Start Video Round</a>
+                <a class="hero-btn blue" href="#doctor-notes"><i class="fa-solid fa-file-waveform"></i>Open Clinical Notes</a>
+                <a class="hero-btn orange" href="#doctor-notes"><i class="fa-solid fa-file-prescription"></i>Issue Prescription</a>
+              </div>
+              <p class="hero-subnote">Doctor workflow is connected to queue status, prescriptions, notes, analytics and consultation revenue.</p>
+            </div>
+            <div class="hero-right">
+              <div class="hero-stats">
+                {% for card in stat_cards %}
+                  <div class="hero-stat {{ card.tone }}">
+                    <span>{{ card.label }}</span>
+                    <strong>{{ card.value }}</strong>
+                  </div>
+                {% endfor %}
+              </div>
+              <span class="hero-dot one" aria-hidden="true"></span>
+              <span class="hero-dot two" aria-hidden="true"></span>
+              <span class="hero-dot three" aria-hidden="true"></span>
+              <div class="doctor-hero-image">
+                <img src="{{ url_for('static', filename='img/consultation_doctor_clean.png') }}" alt="Doctor working on consultation laptop">
+              </div>
+            </div>
+          </section>
 
-<section class="section">
-  <div class="shell grid-2">
-    <article class="card">
-      <h2 class="page-title" style="font-size:1.22rem;">Upcoming</h2>
-      {% for appt in upcoming %}
-        <div class="msg">
-          <small>{{ appt.appointment_code }} | {{ appt.scheduled_for|fmt_dt }}</small>
-          <strong>{{ appt.patient_name }}</strong> <span class="tiny">({{ appt.patient_phone }})</span><br>
-          <span class="tiny">{{ appt.visit_mode }} | {{ appt.reason }}</span><br>
-          <a class="btn btn-soft" style="margin-top:8px;" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=appt.id) }}">Manage</a>
-        </div>
-      {% else %}
-        <p class="tiny">No upcoming appointments.</p>
-      {% endfor %}
-    </article>
-    <article class="card">
-      <h2 class="page-title" style="font-size:1.22rem;">Recent Completed</h2>
-      {% for appt in completed[:8] %}
-        <div class="msg">
-          <small>{{ appt.appointment_code }} | {{ appt.scheduled_for|fmt_dt }}</small>
-          <strong>{{ appt.patient_name }}</strong><br>
-          <span class="tiny">{{ appt.diagnosis or appt.reason }}</span><br>
-          <a class="btn btn-soft" style="margin-top:8px;" href="{{ url_for('consult_doctor_appointment_detail', appointment_id=appt.id) }}">Open Notes</a>
-        </div>
-      {% else %}
-        <p class="tiny">No completed consultations yet.</p>
-      {% endfor %}
-    </article>
+          <section class="grid-main">
+            <article class="panel" id="consult-queue">
+              <div class="panel-head">
+                <h2>Consult Queue</h2>
+                <p>Patients waiting, next actions and visit mode</p>
+              </div>
+              <div class="queue-list">
+                {% for row in queue_rows %}
+                  <a class="queue-row" href="{{ row._room_url if row.status in ['Confirmed', 'In Progress'] else row._detail_url }}">
+                    <span class="queue-time">{{ row._time }}</span>
+                    <span class="queue-name">{{ row.patient_name }}<small>{{ row.reason or 'General consultation review' }}</small></span>
+                    <span class="queue-mode">{{ row._mode_short }}</span>
+                    <span class="queue-badge {{ row._queue_badge.tone }}">{{ row._queue_badge.label }}</span>
+                  </a>
+                {% else %}
+                  <div class="queue-row">
+                    <span class="queue-time">--</span>
+                    <span class="queue-name">No active consult queue<small>New patient requests will appear here.</small></span>
+                    <span class="queue-mode">Standby</span>
+                    <span class="queue-badge closed">Clear</span>
+                  </div>
+                {% endfor %}
+              </div>
+            </article>
+
+            <article class="panel vitals-panel">
+              <div class="panel-head">
+                <h2>Live Patient Vitals</h2>
+                <p>Current connected consultation feed</p>
+              </div>
+              <div class="vitals-focus"><i class="fa-solid fa-heart-pulse"></i>{{ live_vitals.patient_name }} · {{ live_vitals.visit_label }}</div>
+              <input class="vitals-field" type="text" value="{{ live_vitals.bp }}" readonly placeholder="BP">
+              <input class="vitals-field" type="text" value="{{ live_vitals.pulse }}" readonly placeholder="Pulse">
+              <input class="vitals-field" type="text" value="{{ live_vitals.temp }}" readonly placeholder="Temp">
+            </article>
+
+            <article class="panel" id="doctor-notes">
+              <div class="panel-head">
+                <h2>Prescription &amp; Notes</h2>
+                <p>Write findings, meds and follow-up instructions</p>
+              </div>
+              {% if quick_entry %}
+                <p class="notes-kicker">Working on {{ quick_entry.patient_name }} · {{ quick_entry._time }} · {{ quick_entry._mode_short }}</p>
+                <form class="notes-form" method="post">
+                  <input type="hidden" name="action" value="quick_prescription">
+                  <input type="hidden" name="appointment_id" value="{{ quick_entry.id }}">
+                  <label class="visually-hidden" for="diagnosis">Diagnosis</label>
+                  <input class="notes-input" id="diagnosis" name="diagnosis" type="text" placeholder="Dx: Hypertension review, stable readings, continue current plan." value="{{ quick_entry.diagnosis or '' }}">
+                  <label class="visually-hidden" for="prescription">Prescription</label>
+                  <input class="notes-input" id="prescription" name="prescription" type="text" placeholder="Rx: Amlodipine 5mg, once daily for 30 days." value="{{ quick_entry.prescription or '' }}">
+                  <label class="visually-hidden" for="doctor_notes">Doctor Notes</label>
+                  <textarea class="notes-textarea" id="doctor_notes" name="doctor_notes" placeholder="Clinical notes, follow-up instructions and care observations.">{{ quick_entry.doctor_notes or '' }}</textarea>
+                  <button class="notes-button" type="submit">Send E-Prescription</button>
+                </form>
+              {% else %}
+                <p class="notes-kicker">No active appointment selected yet.</p>
+                <div class="notes-form">
+                  <input class="notes-input" type="text" value="Dx: No live patient selected yet." readonly>
+                  <input class="notes-input" type="text" value="Rx: Start by confirming a consultation request." readonly>
+                  <textarea class="notes-textarea" readonly>Doctor notes will become available here after your first booked consultation.</textarea>
+                </div>
+              {% endif %}
+            </article>
+          </section>
+          <section class="grid-bottom">
+            <article class="panel">
+              <div class="panel-head">
+                <h2>Performance Analytics</h2>
+                <p>Consult volume, earnings and patient demand</p>
+              </div>
+              <div class="chart-shell">
+                <svg viewBox="0 0 560 122" aria-label="Performance chart">
+                  <defs>
+                    <linearGradient id="doctorLine" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#2e7ae5"></stop>
+                      <stop offset="100%" stop-color="#2c63cf"></stop>
+                    </linearGradient>
+                  </defs>
+                  <rect x="0.5" y="0.5" width="559" height="121" rx="16" fill="#fbfdff" stroke="#d8e6f7"></rect>
+                  <polyline fill="none" stroke="url(#doctorLine)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" points="{{ performance_polyline }}"></polyline>
+                  {% for point in performance_points %}<circle cx="{{ point.x }}" cy="{{ point.y }}" r="5.5" fill="#2e7ae5"></circle>{% endfor %}
+                </svg>
+              </div>
+              <div class="chart-metrics">
+                <div class="metric-card sky"><span>Consults</span><strong>{{ queue_rows|length + completed|length }}</strong></div>
+                <div class="metric-card blue"><span>Revenue</span><strong>{{ '%.1fk'|format(total_revenue / 1000) if total_revenue >= 1000 else 'GHS %.0f'|format(total_revenue) }}</strong></div>
+                <div class="metric-card sand"><span>No-show</span><strong>{{ '%.0f'|format(no_show_rate) }}%</strong></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <h2>Priority Alerts</h2>
+                <p>What needs your attention next</p>
+              </div>
+              <div class="alert-list">
+                {% for alert in priority_alerts %}<div class="alert-chip {{ alert.tone }}">{{ alert.text }}</div>{% endfor %}
+              </div>
+            </article>
+
+            <article class="panel" id="schedule-flow">
+              <div class="panel-head">
+                <h2>Schedule Flow</h2>
+                <p>Your afternoon blocks and focus windows</p>
+              </div>
+              <div class="flow-list">
+                {% for item in schedule_flow %}
+                  <a class="flow-item" href="{{ item.url }}">
+                    <span class="flow-time">{{ item.time }}</span>
+                    <span><strong>{{ item.label }}</strong><span>{{ item.meta }}</span></span>
+                  </a>
+                {% endfor %}
+              </div>
+            </article>
+          </section>
+
+          <footer class="footer">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Use</a>
+            <a href="#">Support</a>
+          </footer>
+        </section>
+      </main>
+    </div>
   </div>
-</section>
-{% endblock %}
+  <script>
+    (function () {
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.register("{{ url_for('consultation_service_worker') }}").catch(function () {});
+    })();
+  </script>
+</body>
+</html>
